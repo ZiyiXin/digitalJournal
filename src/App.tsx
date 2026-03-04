@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { Plus, X, Image as ImageIcon, Calendar, ChevronDown, MessageSquare, Clock, Camera, Star, MapPin, Heart, Sparkles, ImagePlus, ChevronRight, ChevronLeft, ChevronUp, ArrowLeft, Palette, Pencil, Trash2 } from 'lucide-react';
+import { Plus, X, Image as ImageIcon, Calendar, ChevronDown, MessageSquare, Clock, Camera, Star, MapPin, Heart, Sparkles, ImagePlus, ChevronRight, ChevronUp, ArrowLeft, Palette, Pencil, Trash2, Crop } from 'lucide-react';
 import { motion, AnimatePresence, useScroll, useSpring } from 'motion/react';
 import {createSpace, deleteSpace, fetchSpaces, saveSpaceSnapshot, updateSpaceMeta, uploadImage} from './lib/api';
 import type {Space, TimelineEntry, TreeholeEntry} from './types';
@@ -121,7 +121,19 @@ export const useTheme = () => React.useContext(ThemeContext);
 const treeholeColors = ['bg-[#fff0f3]', 'bg-[#fdf4ff]', 'bg-[#f0fdf4]', 'bg-[#fffbeb]', 'bg-[#f0f9ff]'];
 
 // --- Safe Image Component ---
-function SafeImage({ src, alt, className, onClick }: { src?: string, alt?: string, className?: string, onClick?: () => void }) {
+function SafeImage({
+  src,
+  alt,
+  className,
+  onClick,
+  style,
+}: {
+  src?: string,
+  alt?: string,
+  className?: string,
+  onClick?: () => void,
+  style?: React.CSSProperties,
+}) {
   const [error, setError] = useState(false);
   const [loaded, setLoaded] = useState(false);
   
@@ -130,6 +142,7 @@ function SafeImage({ src, alt, className, onClick }: { src?: string, alt?: strin
       <div 
         className={`flex flex-col items-center justify-center bg-pink-50 text-pink-300 font-bold tracking-widest ${className}`} 
         onClick={onClick}
+        style={style}
       >
         <Heart size={24} className="mb-2 opacity-60" />
         <span className="text-sm font-serif">Love</span>
@@ -145,6 +158,7 @@ function SafeImage({ src, alt, className, onClick }: { src?: string, alt?: strin
       onError={() => setError(true)} 
       referrerPolicy="no-referrer" 
       onClick={onClick} 
+      style={style}
       draggable={false}
     />
   );
@@ -234,6 +248,7 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
           description,
           rotation: (Math.random() * 4) - 2,
           images: imageUrl ? [{ id: newId, imageUrl, text }] : [],
+          coverFocus: { x: 50, y: 42 },
           type: 'timeline'
         };
         setTimelineEntries(sortByDateDesc([newEntry, ...timelineEntries]));
@@ -242,7 +257,8 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
           if (entry.id === eventId) {
             return {
               ...entry,
-              images: imageUrl ? [...entry.images, { id: newId, imageUrl, text }] : entry.images
+              images: imageUrl ? [...entry.images, { id: newId, imageUrl, text }] : entry.images,
+              coverFocus: entry.coverFocus ?? { x: 50, y: 42 },
             };
           }
           return entry;
@@ -353,6 +369,23 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
               }
             : item,
         ),
+      ),
+    );
+  };
+
+  const handleUpdateTimelineCoverFocus = (entryId: string, focus: { x: number; y: number }) => {
+    const clamp = (value: number) => Math.min(100, Math.max(0, value));
+    setTimelineEntries((prev) =>
+      prev.map((entry) =>
+        entry.id === entryId
+          ? {
+              ...entry,
+              coverFocus: {
+                x: clamp(focus.x),
+                y: clamp(focus.y),
+              },
+            }
+          : entry,
       ),
     );
   };
@@ -511,6 +544,7 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
                 onImageClick={(url, text) => setLightboxData({ url, text })}
                 onEditEntry={handleEditTimelineEntry}
                 onDeleteEntry={handleDeleteTimelineEntry}
+                onUpdateCoverFocus={handleUpdateTimelineCoverFocus}
               />
             </motion.div>
           )}
@@ -630,11 +664,13 @@ function TimelineView({
   onImageClick,
   onEditEntry,
   onDeleteEntry,
+  onUpdateCoverFocus,
 }: {
   entries: TimelineEntry[];
   onImageClick: (url: string, text?: string) => void;
   onEditEntry: (entry: TimelineEntry) => void;
   onDeleteEntry: (entryId: string) => void;
+  onUpdateCoverFocus: (entryId: string, focus: { x: number; y: number }) => void;
 }) {
   const theme = useTheme();
   const containerRef = React.useRef<HTMLDivElement>(null);
@@ -744,7 +780,7 @@ function TimelineView({
           style={{ scaleY }}
         />
         
-        <div className="space-y-24">
+        <div className="space-y-16">
           {groupedEntries.map((group) => (
             <div key={group.year} id={`year-${group.year}`} className="relative scroll-mt-32">
               {/* Year Marker */}
@@ -753,14 +789,14 @@ function TimelineView({
                 whileInView={{ opacity: 1, scale: 1, y: 0 }}
                 viewport={{ once: true, margin: "-100px" }}
                 transition={{ duration: 0.6, type: "spring" }}
-                className="flex items-center justify-center mb-16 relative z-10"
+                className="flex items-center justify-center mb-10 relative z-10"
               >
-                <div className={`${theme.cardBg} backdrop-blur-md px-10 py-3 rounded-full border ${theme.cardBorder} shadow-[0_4px_20px_rgba(244,114,182,0.1)] ${theme.accent} font-serif font-bold text-2xl tracking-[0.2em] flex items-center justify-center`}>
+                <div className={`${theme.cardBg} backdrop-blur-md px-8 py-2.5 rounded-full border ${theme.cardBorder} shadow-[0_3px_14px_rgba(244,114,182,0.1)] ${theme.accent} font-serif font-bold text-xl tracking-[0.18em] flex items-center justify-center`}>
                   {group.year}
                 </div>
               </motion.div>
 
-              <div className="space-y-8">
+              <div className="space-y-5">
                 {group.entries.map((entry, index) => {
                   const globalIndex = entries.findIndex(e => e.id === entry.id);
                   return (
@@ -777,6 +813,7 @@ function TimelineView({
                       onImageClick={onImageClick}
                       onEditEntry={onEditEntry}
                       onDeleteEntry={onDeleteEntry}
+                      onUpdateCoverFocus={onUpdateCoverFocus}
                     />
                   </motion.div>
                 )})}
@@ -795,84 +832,66 @@ function TimelineFolder({
   onImageClick,
   onEditEntry,
   onDeleteEntry,
+  onUpdateCoverFocus,
 }: {
   entry: TimelineEntry;
   index: number;
   onImageClick: (url: string, text?: string) => void;
   onEditEntry: (entry: TimelineEntry) => void;
   onDeleteEntry: (entryId: string) => void;
+  onUpdateCoverFocus: (entryId: string, focus: { x: number; y: number }) => void;
 }) {
   const theme = useTheme();
   const [isExpanded, setIsExpanded] = useState(false);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const isDragging = React.useRef(false);
-  const wheelTimeout = React.useRef<NodeJS.Timeout | null>(null);
+  const [isCropOpen, setIsCropOpen] = useState(false);
   const isEven = index % 2 === 0;
+  const coverFocus = entry.coverFocus ?? { x: 50, y: 42 };
+  const [cropDraft, setCropDraft] = useState<{ x: number; y: number }>({
+    x: coverFocus.x,
+    y: coverFocus.y,
+  });
   const coverImage = entry.images.length > 0 ? entry.images[0].imageUrl : 'https://images.unsplash.com/photo-1490750967868-88aa4486c946?auto=format&fit=crop&w=800&q=80';
+  const relatedImages = entry.images.slice(1);
 
   React.useEffect(() => {
-    if (!isExpanded) {
-      setTimeout(() => setCurrentIndex(0), 300);
-    }
-  }, [isExpanded]);
-
-  const handleNext = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setCurrentIndex((prev) => (prev + 1) % entry.images.length);
-  };
-
-  const handlePrev = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setCurrentIndex((prev) => (prev - 1 + entry.images.length) % entry.images.length);
-  };
-
-  const handleDragEnd = (e: any, { offset }: any) => {
-    setTimeout(() => { isDragging.current = false; }, 50);
-    const swipe = offset.x;
-    if (swipe < -50) {
-      setCurrentIndex((prev) => (prev + 1) % entry.images.length);
-    } else if (swipe > 50) {
-      setCurrentIndex((prev) => (prev - 1 + entry.images.length) % entry.images.length);
-    }
-  };
-
-  const handleWheel = (e: React.WheelEvent) => {
-    if (Math.abs(e.deltaX) > Math.abs(e.deltaY) && Math.abs(e.deltaX) > 10) {
-      if (wheelTimeout.current) return;
-      
-      if (e.deltaX > 0) {
-        setCurrentIndex((prev) => (prev + 1) % entry.images.length);
-      } else {
-        setCurrentIndex((prev) => (prev - 1 + entry.images.length) % entry.images.length);
-      }
-      
-      wheelTimeout.current = setTimeout(() => {
-        wheelTimeout.current = null;
-      }, 400);
-    }
-  };
+    setCropDraft({
+      x: coverFocus.x,
+      y: coverFocus.y,
+    });
+  }, [entry.id, coverFocus.x, coverFocus.y]);
 
   return (
-    <div className="relative w-full mb-6">
+    <div className="relative w-full mb-3">
       <div className={`relative flex flex-col md:flex-row items-start ${isEven ? 'md:flex-row-reverse' : ''}`}>
         <motion.div 
           initial={{ scale: 0 }}
           whileInView={{ scale: 1 }}
           viewport={{ once: true, margin: "-100px" }}
           transition={{ duration: 0.5, delay: 0.2, type: "spring" }}
-          className={`absolute left-[9px] md:left-1/2 w-[12px] h-[12px] rounded-full ${theme.bgAccent} md:-translate-x-1/2 mt-6 ring-4 ${theme.dotRing} shadow-sm z-10`}
+          className={`absolute left-[9px] md:left-1/2 w-[10px] h-[10px] rounded-full ${theme.bgAccent} md:-translate-x-1/2 mt-5 ring-4 ${theme.dotRing} shadow-sm z-10`}
         ></motion.div>
 
-        <div className={`ml-12 md:ml-0 md:w-1/2 ${isEven ? 'md:pl-8' : 'md:pr-8'} py-2 flex ${isEven ? 'justify-start' : 'justify-end'}`}>
+        <div className={`ml-12 md:ml-0 md:w-1/2 ${isEven ? 'md:pl-12' : 'md:pr-12'} py-1 flex ${isEven ? 'justify-start' : 'justify-end'}`}>
           
           {/* Clipping/Note Container */}
-          <div className="relative w-full max-w-sm group">
+          <div className="relative w-full max-w-[19rem] group">
             {/* Washi Tape */}
             <div className={`absolute -top-3 ${isEven ? 'right-8 rotate-[4deg]' : 'left-8 rotate-[-3deg]'} w-16 h-6 ${theme.tape} backdrop-blur-sm z-30 mix-blend-multiply shadow-sm transition-transform duration-300 group-hover:-translate-y-1`}></div>
             
             {/* Main Card (The "Envelope") */}
-            <div className={`relative ${theme.cardBg} p-5 shadow-sm border ${theme.cardBorder} transition-all duration-300 w-full hover:shadow-md hover:-translate-y-1 z-20`}>
+            <div className={`relative ${theme.cardBg} p-3.5 shadow-sm border ${theme.cardBorder} transition-all duration-300 w-full hover:shadow-md hover:-translate-y-0.5 z-20`}>
               <div className="absolute top-3 right-3 z-30 flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsCropOpen((prev) => !prev);
+                  }}
+                  className={`${theme.cardBg} backdrop-blur-sm border ${theme.cardBorder} p-1.5 rounded-full ${theme.textMuted} hover:opacity-80 transition-colors`}
+                  title="裁切封面"
+                >
+                  <Crop size={13} />
+                </button>
                 <button
                   type="button"
                   onClick={(e) => {
@@ -898,7 +917,12 @@ function TimelineFolder({
               {/* Clickable Header/Cover Area */}
               <div className="cursor-pointer" onClick={() => setIsExpanded(!isExpanded)}>
                 <div className="overflow-hidden relative">
-                  <SafeImage src={coverImage} alt={entry.title} className={`w-full h-[240px] md:h-[280px] object-cover grayscale-[20%] group-hover:grayscale-0 transition-all duration-500 ${theme.imageFilter}`} />
+                  <SafeImage
+                    src={coverImage}
+                    alt={entry.title}
+                    className={`w-full h-[158px] md:h-[176px] object-cover grayscale-[20%] group-hover:grayscale-0 transition-all duration-500 ${theme.imageFilter}`}
+                    style={{ objectPosition: `${coverFocus.x}% ${coverFocus.y}%` }}
+                  />
                   {entry.images.length > 1 && (
                     <div className={`absolute bottom-2 right-2 ${theme.cardBg} backdrop-blur-sm ${theme.textMain} text-[10px] px-2 py-1 font-mono tracking-widest border ${theme.cardBorder}`}>
                       +{entry.images.length - 1}
@@ -906,143 +930,123 @@ function TimelineFolder({
                   )}
                 </div>
                 
-                <div className="mt-5 text-left relative">
+                <div className="mt-3 text-left relative">
                   <div className="flex items-center justify-between mb-2">
-                    <span className={`font-mono ${theme.textMuted} text-[10px] tracking-[0.2em] uppercase`}>{entry.date}</span>
+                    <span className={`font-mono ${theme.textMuted} text-[9px] tracking-[0.18em] uppercase`}>{entry.date}</span>
                     {entry.images.length > 0 && (
                       <motion.div 
                         animate={{ rotate: isExpanded ? 90 : 0 }} 
                         className={theme.textMuted}
                       >
-                        <ChevronRight size={14} />
+                        <ChevronRight size={12} />
                       </motion.div>
                     )}
                   </div>
-                  <h3 className={`${theme.fontTitle} font-bold ${theme.textMain} text-xl leading-snug`}>{entry.title}</h3>
+                  <h3 className={`${theme.fontTitle} font-bold ${theme.textMain} text-lg leading-snug line-clamp-1`}>{entry.title}</h3>
                 </div>
               </div>
 
               {/* Description expands inside the card */}
               <AnimatePresence>
-                {isExpanded && entry.description && (
+                {entry.description && (
                   <motion.div
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
+                    exit={{ opacity: 1, height: 'auto' }}
                     className="overflow-hidden"
                   >
-                    <div className={`pt-4 mt-3 border-t ${theme.cardBorder}`}>
-                      <p className={`${theme.textMuted} font-serif leading-relaxed text-sm text-left whitespace-pre-line`}>{entry.description}</p>
+                    <div className={`pt-3 mt-2 border-t ${theme.cardBorder}`}>
+                      <p className={`${theme.textMuted} font-serif leading-relaxed text-[13px] text-left whitespace-pre-line ${isExpanded ? '' : 'line-clamp-2'}`}>{entry.description}</p>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <AnimatePresence>
+                {isCropOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -8, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -8, scale: 0.98 }}
+                    transition={{ duration: 0.2 }}
+                    className={`absolute top-12 right-3 z-40 w-56 p-3 ${theme.cardBg} border ${theme.cardBorder} shadow-md`}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="overflow-hidden border border-stone-200 rounded-sm mb-3">
+                      <SafeImage
+                        src={coverImage}
+                        alt={entry.title}
+                        className="w-full aspect-[4/3] object-cover"
+                        style={{ objectPosition: `${cropDraft.x}% ${cropDraft.y}%` }}
+                      />
+                    </div>
+                    <label className={`block text-[11px] ${theme.textMuted} mb-1`}>左右裁切焦点</label>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      value={cropDraft.x}
+                      onChange={(e) => setCropDraft((prev) => ({ ...prev, x: Number(e.target.value) }))}
+                      className="w-full mb-2"
+                    />
+                    <label className={`block text-[11px] ${theme.textMuted} mb-1`}>上下裁切焦点</label>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      value={cropDraft.y}
+                      onChange={(e) => setCropDraft((prev) => ({ ...prev, y: Number(e.target.value) }))}
+                      className="w-full mb-3"
+                    />
+                    <div className="flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCropDraft({ x: coverFocus.x, y: coverFocus.y });
+                          setIsCropOpen(false);
+                        }}
+                        className={`text-[11px] px-2.5 py-1 border ${theme.cardBorder} ${theme.textMuted}`}
+                      >
+                        取消
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onUpdateCoverFocus(entry.id, cropDraft);
+                          setIsCropOpen(false);
+                        }}
+                        className={`text-[11px] px-2.5 py-1 ${theme.button}`}
+                      >
+                        保存
+                      </button>
                     </div>
                   </motion.div>
                 )}
               </AnimatePresence>
             </div>
 
-            {/* Expanded Content (Stacked Photos) */}
             <AnimatePresence>
-              {isExpanded && entry.images.length > 0 && (
+              {isExpanded && relatedImages.length > 0 && (
                 <motion.div
-                  initial={{ opacity: 0, y: -40, height: 0 }}
-                  animate={{ opacity: 1, y: 0, height: 'auto' }}
-                  exit={{ opacity: 0, y: -40, height: 0 }}
-                  transition={{ duration: 0.5, ease: "easeOut" }}
-                  className="relative z-10 w-[92%] mx-auto pt-4 pb-6 -mt-2"
-                  onWheel={handleWheel}
+                  initial={{ opacity: 0, x: isEven ? 24 : -24 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: isEven ? 24 : -24 }}
+                  transition={{ duration: 0.28 }}
+                  className={`hidden md:flex absolute top-2 ${isEven ? '-right-[8.75rem]' : '-left-[8.75rem]'} w-28 flex-col gap-2.5 z-0`}
                 >
-                  <div className="relative h-[280px] md:h-[320px] w-full">
-                    <AnimatePresence initial={false}>
-                      {entry.images.map((img, i) => {
-                        const diff = (i - currentIndex + entry.images.length) % entry.images.length;
-                        
-                        let zIndex = entry.images.length - diff;
-                        let scale = 1 - diff * 0.05;
-                        let y = diff * 12;
-                        let opacity = 1;
-
-                        if (diff > 2) {
-                          opacity = 0;
-                          scale = 0.9;
-                          y = 36;
-                        }
-
-                        if (diff === entry.images.length - 1 && entry.images.length > 2) {
-                          opacity = 0;
-                          scale = 1.05;
-                          y = -20;
-                        } else if (entry.images.length === 2 && diff === 1) {
-                          // For 2 images, just swap them smoothly
-                          scale = 0.95;
-                          y = 12;
-                          opacity = 1;
-                        }
-
-                        // Don't render cards that are completely hidden to save DOM nodes
-                        if (opacity === 0 && diff !== entry.images.length - 1 && diff > 2) return null;
-
-                        return (
-                          <motion.div
-                            key={img.id || i}
-                            className={`absolute top-0 left-0 w-full bg-white p-2 pb-3 shadow-sm rounded-sm border border-stone-200/60 group/photo hover:shadow-md transition-shadow duration-300 ${diff === 0 ? 'cursor-grab active:cursor-grabbing' : 'pointer-events-none'}`}
-                            style={{ zIndex }}
-                            initial={{ opacity: 0, scale: 0.8, y: 20 }}
-                            animate={{ opacity, scale, y, x: 0 }}
-                            exit={{ opacity: 0, scale: 0.8, y: 20 }}
-                            transition={{ duration: 0.4, type: "spring", bounce: 0.2 }}
-                            drag={diff === 0 ? "x" : false}
-                            dragConstraints={{ left: 0, right: 0 }}
-                            dragElastic={0.8}
-                            onDragStart={() => { isDragging.current = true; }}
-                            onDragEnd={diff === 0 ? handleDragEnd : undefined}
-                            onClick={() => {
-                              if (!isDragging.current && diff === 0) onImageClick(img.imageUrl, img.text);
-                            }}
-                          >
-                            <div className="relative overflow-hidden rounded-sm h-[180px] md:h-[220px]">
-                              <SafeImage 
-                                src={img.imageUrl} 
-                                className="w-full h-full object-cover" 
-                              />
-                            </div>
-                            {/* Note displayed below image */}
-                            {img.text && (
-                              <div className="mt-3 px-1 h-10 flex items-center justify-center">
-                                <p className="text-stone-600 text-xs font-serif text-center line-clamp-2 leading-relaxed">{img.text}</p>
-                              </div>
-                            )}
-                            
-                            {/* Navigation hints (only on front card) */}
-                            {diff === 0 && entry.images.length > 1 && (
-                              <>
-                                <button 
-                                  onClick={handlePrev}
-                                  className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-full bg-white/50 backdrop-blur-sm text-stone-600 opacity-0 group-hover/photo:opacity-100 transition-opacity hover:bg-white/80"
-                                >
-                                  <ChevronLeft size={16} />
-                                </button>
-                                <button 
-                                  onClick={handleNext}
-                                  className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center rounded-full bg-white/50 backdrop-blur-sm text-stone-600 opacity-0 group-hover/photo:opacity-100 transition-opacity hover:bg-white/80"
-                                >
-                                  <ChevronRight size={16} />
-                                </button>
-                              </>
-                            )}
-                          </motion.div>
-                        );
-                      })}
-                    </AnimatePresence>
-                  </div>
-                  
-                  {/* Indicators */}
-                  {entry.images.length > 1 && (
-                    <div className="flex justify-center gap-1.5 mt-4">
-                      {entry.images.map((_, i) => (
-                        <div 
-                          key={i} 
-                          className={`w-1.5 h-1.5 rounded-full transition-colors duration-300 ${i === currentIndex ? 'bg-stone-400' : 'bg-stone-200'}`}
-                        />
-                      ))}
+                  {relatedImages.slice(0, 4).map((img) => (
+                    <button
+                      key={img.id}
+                      type="button"
+                      onClick={() => onImageClick(img.imageUrl, img.text)}
+                      className={`w-full border ${theme.cardBorder} ${theme.cardBg} shadow-sm overflow-hidden`}
+                    >
+                      <SafeImage src={img.imageUrl} className={`w-full aspect-[4/5] object-cover ${theme.imageFilter}`} />
+                    </button>
+                  ))}
+                  {relatedImages.length > 4 && (
+                    <div className={`text-center text-[11px] ${theme.textMuted} ${theme.cardBg} border ${theme.cardBorder} py-1.5`}>
+                      +{relatedImages.length - 4} 张
                     </div>
                   )}
                 </motion.div>
@@ -1071,9 +1075,45 @@ function AlbumMasonry({
   onEditEntry: (entry: TimelineEntry) => void;
   onDeleteEntry: (entryId: string) => void;
 }) {
-  const theme = useTheme();
   const cols = useMasonryCols();
-  
+  const expandedEntry = React.useMemo(
+    () =>
+      expandedAlbumId
+        ? entries.find((entry) => entry.id === expandedAlbumId && entry.type !== 'loose_photo') ?? null
+        : null,
+    [entries, expandedAlbumId],
+  );
+
+  React.useEffect(() => {
+    if (expandedAlbumId && !expandedEntry) {
+      setExpandedAlbumId(null);
+    }
+  }, [expandedAlbumId, expandedEntry, setExpandedAlbumId]);
+
+  if (expandedEntry) {
+    return (
+      <motion.div
+        key={`album-detail-${expandedEntry.id}`}
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -20 }}
+        transition={{ duration: 0.4 }}
+        className="w-full"
+      >
+        <div className="max-w-3xl mx-auto">
+          <AlbumStack
+            entry={expandedEntry}
+            isExpanded
+            onToggle={() => setExpandedAlbumId(null)}
+            onImageClick={onImageClick}
+            onEditEntry={onEditEntry}
+            onDeleteEntry={onDeleteEntry}
+          />
+        </div>
+      </motion.div>
+    );
+  }
+
   const columns: TimelineEntry[][] = Array.from({ length: cols }, () => []);
   entries.forEach((entry, i) => {
     columns[i % cols].push(entry);
@@ -1100,8 +1140,8 @@ function AlbumMasonry({
               <AlbumStack 
                 key={entry.id} 
                 entry={entry} 
-                isExpanded={expandedAlbumId === entry.id}
-                onToggle={() => setExpandedAlbumId(expandedAlbumId === entry.id ? null : entry.id)}
+                isExpanded={false}
+                onToggle={() => setExpandedAlbumId(entry.id)}
                 onImageClick={onImageClick}
                 onEditEntry={onEditEntry}
                 onDeleteEntry={onDeleteEntry}

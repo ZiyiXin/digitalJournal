@@ -6,12 +6,18 @@ export interface TimelineImage {
   text?: string;
 }
 
+export interface CoverFocus {
+  x: number;
+  y: number;
+}
+
 export interface TimelineEntry {
   id: string;
   title: string;
   date: string;
   description?: string;
   images: TimelineImage[];
+  coverFocus?: CoverFocus;
   rotation: number;
   type?: TimelineEntryType;
 }
