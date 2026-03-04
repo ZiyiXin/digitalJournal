@@ -1,5 +1,5 @@
-import React, { useRef, useState } from 'react';
-import { Plus, X, Image as ImageIcon, Calendar, ChevronDown, MessageSquare, Clock, Camera, Star, MapPin, Heart, Sparkles, ImagePlus, ChevronRight, ChevronUp, ArrowLeft, Palette, Pencil, Trash2 } from 'lucide-react';
+import React, { useCallback, useRef, useState } from 'react';
+import { Plus, X, Image as ImageIcon, Calendar, ChevronDown, MessageSquare, Clock, Camera, Star, MapPin, Heart, Sparkles, ImagePlus, ChevronRight, ChevronLeft, ChevronUp, ArrowLeft, Palette, Pencil, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence, useScroll, useSpring } from 'motion/react';
 import {createSpace, deleteSpace, fetchSpaces, saveSpaceSnapshot, updateSpaceMeta, uploadImage} from './lib/api';
 import type {Space, TimelineEntry, TreeholeEntry} from './types';
@@ -190,6 +190,7 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
   const [lightboxData, setLightboxData] = useState<{ url: string, text?: string } | null>(null);
   const [expandedAlbumId, setExpandedAlbumId] = useState<string | null>(null);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const hasMountedRef = useRef(false);
   const theme = useTheme();
 
   // Customizable Hero and Avatar
@@ -204,6 +205,11 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
   }, [space.id, space.entries, space.treeholeEntries, space.heroImage, space.avatarImage]);
 
   React.useEffect(() => {
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true;
+      return;
+    }
+
     onUpdateSpace({
       id: space.id,
       name: space.name,
@@ -1907,6 +1913,9 @@ export default function App() {
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
   const saveTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const pendingSaveRef = useRef<Record<string, Space>>({});
+  const saveInFlightRef = useRef<Record<string, boolean>>({});
+  const shouldSaveAgainRef = useRef<Record<string, boolean>>({});
 
   React.useEffect(() => {
     localStorage.setItem('journal-theme', themeName);
@@ -1932,6 +1941,10 @@ export default function App() {
     return () => {
       mounted = false;
       (Object.values(saveTimersRef.current) as Array<ReturnType<typeof setTimeout>>).forEach((timer) => clearTimeout(timer));
+      saveTimersRef.current = {};
+      pendingSaveRef.current = {};
+      saveInFlightRef.current = {};
+      shouldSaveAgainRef.current = {};
     };
   }, []);
 
@@ -1943,44 +1956,69 @@ export default function App() {
     }
   }, [spaces, currentSpaceId]);
 
-  const handleUpdateSpace = (updatedSpace: Space) => {
-    setSpaces((prev) => prev.map((space) => (space.id === updatedSpace.id ? updatedSpace : space)));
+  const flushSpaceSave = useCallback(async (spaceId: string) => {
+    if (saveInFlightRef.current[spaceId]) {
+      shouldSaveAgainRef.current[spaceId] = true;
+      return;
+    }
 
-    const timerKey = updatedSpace.id;
-    const existingTimer = saveTimersRef.current[timerKey];
+    const snapshot = pendingSaveRef.current[spaceId];
+    if (!snapshot) return;
+
+    saveInFlightRef.current[spaceId] = true;
+    shouldSaveAgainRef.current[spaceId] = false;
+    try {
+      await saveSpaceSnapshot(snapshot);
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error('Failed to persist space snapshot', error);
+    } finally {
+      saveInFlightRef.current[spaceId] = false;
+      if (shouldSaveAgainRef.current[spaceId]) {
+        shouldSaveAgainRef.current[spaceId] = false;
+        void flushSpaceSave(spaceId);
+      }
+    }
+  }, []);
+
+  const handleUpdateSpace = useCallback((updatedSpace: Space) => {
+    setSpaces((prev) => prev.map((space) => (space.id === updatedSpace.id ? updatedSpace : space)));
+    pendingSaveRef.current[updatedSpace.id] = updatedSpace;
+
+    const existingTimer = saveTimersRef.current[updatedSpace.id];
     if (existingTimer) clearTimeout(existingTimer);
 
-    saveTimersRef.current[timerKey] = setTimeout(async () => {
-      try {
-        const saved = await saveSpaceSnapshot(updatedSpace);
-        setSpaces((prev) => prev.map((space) => (space.id === saved.id ? saved : space)));
-      } catch (error) {
-        // eslint-disable-next-line no-console
-        console.error('Failed to persist space snapshot', error);
-      }
+    saveTimersRef.current[updatedSpace.id] = setTimeout(() => {
+      void flushSpaceSave(updatedSpace.id);
     }, 400);
-  };
+  }, [flushSpaceSave]);
 
-  const handleCreateSpace = async (name: string, avatarImage: string) => {
+  const handleCreateSpace = useCallback(async (name: string, avatarImage: string) => {
     const created = await createSpace({
       name,
       avatarImage,
     });
     setSpaces((prev) => [...prev, created]);
-  };
+  }, []);
 
-  const handleRenameSpace = async (id: string, name: string) => {
+  const handleRenameSpace = useCallback(async (id: string, name: string) => {
     const updated = await updateSpaceMeta(id, {name});
     setSpaces((prev) => prev.map((space) => (space.id === id ? updated : space)));
-  };
+  }, []);
 
-  const handleDeleteSpace = async (id: string) => {
+  const handleDeleteSpace = useCallback(async (id: string) => {
     await deleteSpace(id);
     setSpaces((prev) => prev.filter((space) => space.id !== id));
-    if (currentSpaceId === id) {
-      setCurrentSpaceId(null);
+    setCurrentSpaceId((prev) => (prev === id ? null : prev));
+    delete pendingSaveRef.current[id];
+    delete saveInFlightRef.current[id];
+    delete shouldSaveAgainRef.current[id];
+    const timer = saveTimersRef.current[id];
+    if (timer) {
+      clearTimeout(timer);
+      delete saveTimersRef.current[id];
     }
-  };
+  }, []);
 
   const currentTheme = THEMES[themeName];
   const currentSpace = currentSpaceId ? spaces.find((space) => space.id === currentSpaceId) ?? null : null;
