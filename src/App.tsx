@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { Plus, X, Image as ImageIcon, Calendar, ChevronDown, MessageSquare, Clock, Camera, Star, MapPin, Heart, Sparkles, ImagePlus, ChevronRight, ChevronLeft, ChevronUp, ArrowLeft, Palette, Pencil, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence, useScroll, useSpring } from 'motion/react';
 import {createSpace, deleteSpace, fetchSpaces, saveSpaceSnapshot, updateSpaceMeta, uploadImage} from './lib/api';
@@ -176,6 +176,7 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
   const [lightboxData, setLightboxData] = useState<{ url: string, text?: string } | null>(null);
   const [expandedAlbumId, setExpandedAlbumId] = useState<string | null>(null);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const hasMountedRef = useRef(false);
   const theme = useTheme();
 
   // Customizable Hero and Avatar
@@ -190,6 +191,11 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
   }, [space.id, space.entries, space.treeholeEntries, space.heroImage, space.avatarImage]);
 
   React.useEffect(() => {
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true;
+      return;
+    }
+
     onUpdateSpace({
       id: space.id,
       name: space.name,
@@ -1088,7 +1094,29 @@ function AlbumMasonry({
     }
   }, [expandedAlbumId, expandedEntry, setExpandedAlbumId]);
 
+  const buildColumns = React.useCallback(
+    (items: TimelineEntry[]) => {
+      const nextColumns: TimelineEntry[][] = Array.from({ length: cols }, () => []);
+      items.forEach((entry, i) => {
+        nextColumns[i % cols].push(entry);
+      });
+      return nextColumns;
+    },
+    [cols],
+  );
+
   if (expandedEntry) {
+    const detailEntries: TimelineEntry[] = expandedEntry.images.map((img, idx) => ({
+      id: `${expandedEntry.id}-detail-${img.id}-${idx}`,
+      title: expandedEntry.title,
+      date: expandedEntry.date,
+      description: expandedEntry.description,
+      images: [img],
+      rotation: ((idx % 5) - 2) * 1.1 + expandedEntry.rotation * 0.2,
+      type: 'loose_photo',
+    }));
+    const detailColumns = buildColumns(detailEntries);
+
     return (
       <motion.div
         key={`album-detail-${expandedEntry.id}`}
@@ -1096,41 +1124,43 @@ function AlbumMasonry({
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: -20 }}
         transition={{ duration: 0.4 }}
-        className="w-full space-y-4"
+        className="w-full"
       >
-        <div className="max-w-3xl mx-auto">
-          <div className={`${theme.cardBg} border ${theme.cardBorder} rounded-xl px-4 py-3 flex items-center justify-between`}>
-            <button
-              type="button"
-              onClick={() => setExpandedAlbumId(null)}
-              className={`inline-flex items-center gap-1.5 ${theme.textMain} hover:opacity-80 transition-opacity`}
-            >
-              <ArrowLeft size={16} />
-              <span className="text-sm font-medium">返回剪影照片流</span>
-            </button>
-            <span className={`${theme.textMuted} text-xs`}>
-              {expandedEntry.images.length} 张
-            </span>
-          </div>
+        <div className="flex items-center justify-between mb-4 px-1">
+          <button
+            type="button"
+            onClick={() => setExpandedAlbumId(null)}
+            className={`inline-flex items-center gap-1.5 ${theme.textMain} hover:opacity-80 transition-opacity`}
+          >
+            <ArrowLeft size={16} />
+            <span className="text-sm font-medium">返回剪影照片流</span>
+          </button>
+          <span className={`${theme.textMuted} text-xs`}>
+            {expandedEntry.title || '未命名相册'} · {expandedEntry.images.length} 张
+          </span>
         </div>
-        <div className="max-w-3xl mx-auto">
-          <AlbumStack
-            entry={expandedEntry}
-            isExpanded
-            onToggle={() => setExpandedAlbumId(null)}
-            onImageClick={onImageClick}
-            onEditEntry={onEditEntry}
-            onDeleteEntry={onDeleteEntry}
-          />
+
+        <div className="flex gap-4 md:gap-6 items-start">
+          {detailColumns.map((col, colIndex) => (
+            <div key={colIndex} className="flex-1 flex flex-col gap-6 md:gap-8">
+              {col.map((entry) => (
+                <LoosePhotoPolaroid
+                  key={entry.id}
+                  entry={entry}
+                  onImageClick={onImageClick}
+                  onEditEntry={onEditEntry}
+                  onDeleteEntry={onDeleteEntry}
+                  hideActions
+                />
+              ))}
+            </div>
+          ))}
         </div>
       </motion.div>
     );
   }
 
-  const columns: TimelineEntry[][] = Array.from({ length: cols }, () => []);
-  entries.forEach((entry, i) => {
-    columns[i % cols].push(entry);
-  });
+  const columns = buildColumns(entries);
 
   return (
     <motion.div 
@@ -1172,7 +1202,8 @@ const LoosePhotoPolaroid: React.FC<{
   onImageClick: (url: string, text?: string) => void;
   onEditEntry: (entry: TimelineEntry) => void;
   onDeleteEntry: (entryId: string) => void;
-}> = ({ entry, onImageClick, onEditEntry, onDeleteEntry }) => {
+  hideActions?: boolean;
+}> = ({ entry, onImageClick, onEditEntry, onDeleteEntry, hideActions = false }) => {
   const theme = useTheme();
   const img = entry.images[0];
   
@@ -1184,28 +1215,30 @@ const LoosePhotoPolaroid: React.FC<{
       className="relative w-full group mb-6"
       style={{ transform: `rotate(${entry.rotation}deg)` }}
     >
-      <div className="absolute top-2 right-2 z-30 flex items-center gap-1">
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onEditEntry(entry);
-          }}
-          className={`${theme.cardBg} border ${theme.cardBorder} p-1 rounded-full ${theme.textMuted} hover:opacity-80 transition-colors`}
-        >
-          <Pencil size={12} />
-        </button>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onDeleteEntry(entry.id);
-          }}
-          className={`${theme.cardBg} border ${theme.cardBorder} p-1 rounded-full ${theme.textMuted} hover:text-red-500 transition-colors`}
-        >
-          <Trash2 size={12} />
-        </button>
-      </div>
+      {!hideActions && (
+        <div className="absolute top-2 right-2 z-30 flex items-center gap-1">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onEditEntry(entry);
+            }}
+            className={`${theme.cardBg} border ${theme.cardBorder} p-1 rounded-full ${theme.textMuted} hover:opacity-80 transition-colors`}
+          >
+            <Pencil size={12} />
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDeleteEntry(entry.id);
+            }}
+            className={`${theme.cardBg} border ${theme.cardBorder} p-1 rounded-full ${theme.textMuted} hover:text-red-500 transition-colors`}
+          >
+            <Trash2 size={12} />
+          </button>
+        </div>
+      )}
       <div 
         className={`relative z-20 shadow-sm rounded-sm overflow-hidden transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-md cursor-zoom-in border ${theme.cardBorder}`}
         onClick={() => onImageClick(img.imageUrl, img.text)}
@@ -1951,6 +1984,9 @@ export default function App() {
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
   const saveTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const pendingSaveRef = useRef<Record<string, Space>>({});
+  const saveInFlightRef = useRef<Record<string, boolean>>({});
+  const shouldSaveAgainRef = useRef<Record<string, boolean>>({});
 
   React.useEffect(() => {
     localStorage.setItem('journal-theme', themeName);
@@ -1976,6 +2012,10 @@ export default function App() {
     return () => {
       mounted = false;
       (Object.values(saveTimersRef.current) as Array<ReturnType<typeof setTimeout>>).forEach((timer) => clearTimeout(timer));
+      saveTimersRef.current = {};
+      pendingSaveRef.current = {};
+      saveInFlightRef.current = {};
+      shouldSaveAgainRef.current = {};
     };
   }, []);
 
@@ -1987,44 +2027,69 @@ export default function App() {
     }
   }, [spaces, currentSpaceId]);
 
-  const handleUpdateSpace = (updatedSpace: Space) => {
-    setSpaces((prev) => prev.map((space) => (space.id === updatedSpace.id ? updatedSpace : space)));
+  const flushSpaceSave = useCallback(async (spaceId: string) => {
+    if (saveInFlightRef.current[spaceId]) {
+      shouldSaveAgainRef.current[spaceId] = true;
+      return;
+    }
 
-    const timerKey = updatedSpace.id;
-    const existingTimer = saveTimersRef.current[timerKey];
+    const snapshot = pendingSaveRef.current[spaceId];
+    if (!snapshot) return;
+
+    saveInFlightRef.current[spaceId] = true;
+    shouldSaveAgainRef.current[spaceId] = false;
+    try {
+      await saveSpaceSnapshot(snapshot);
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error('Failed to persist space snapshot', error);
+    } finally {
+      saveInFlightRef.current[spaceId] = false;
+      if (shouldSaveAgainRef.current[spaceId]) {
+        shouldSaveAgainRef.current[spaceId] = false;
+        void flushSpaceSave(spaceId);
+      }
+    }
+  }, []);
+
+  const handleUpdateSpace = useCallback((updatedSpace: Space) => {
+    setSpaces((prev) => prev.map((space) => (space.id === updatedSpace.id ? updatedSpace : space)));
+    pendingSaveRef.current[updatedSpace.id] = updatedSpace;
+
+    const existingTimer = saveTimersRef.current[updatedSpace.id];
     if (existingTimer) clearTimeout(existingTimer);
 
-    saveTimersRef.current[timerKey] = setTimeout(async () => {
-      try {
-        const saved = await saveSpaceSnapshot(updatedSpace);
-        setSpaces((prev) => prev.map((space) => (space.id === saved.id ? saved : space)));
-      } catch (error) {
-        // eslint-disable-next-line no-console
-        console.error('Failed to persist space snapshot', error);
-      }
+    saveTimersRef.current[updatedSpace.id] = setTimeout(() => {
+      void flushSpaceSave(updatedSpace.id);
     }, 400);
-  };
+  }, [flushSpaceSave]);
 
-  const handleCreateSpace = async (name: string, avatarImage: string) => {
+  const handleCreateSpace = useCallback(async (name: string, avatarImage: string) => {
     const created = await createSpace({
       name,
       avatarImage,
     });
     setSpaces((prev) => [...prev, created]);
-  };
+  }, []);
 
-  const handleRenameSpace = async (id: string, name: string) => {
+  const handleRenameSpace = useCallback(async (id: string, name: string) => {
     const updated = await updateSpaceMeta(id, {name});
     setSpaces((prev) => prev.map((space) => (space.id === id ? updated : space)));
-  };
+  }, []);
 
-  const handleDeleteSpace = async (id: string) => {
+  const handleDeleteSpace = useCallback(async (id: string) => {
     await deleteSpace(id);
     setSpaces((prev) => prev.filter((space) => space.id !== id));
-    if (currentSpaceId === id) {
-      setCurrentSpaceId(null);
+    setCurrentSpaceId((prev) => (prev === id ? null : prev));
+    delete pendingSaveRef.current[id];
+    delete saveInFlightRef.current[id];
+    delete shouldSaveAgainRef.current[id];
+    const timer = saveTimersRef.current[id];
+    if (timer) {
+      clearTimeout(timer);
+      delete saveTimersRef.current[id];
     }
-  };
+  }, []);
 
   const currentTheme = THEMES[themeName];
   const currentSpace = currentSpaceId ? spaces.find((space) => space.id === currentSpaceId) ?? null : null;
