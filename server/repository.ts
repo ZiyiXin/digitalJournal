@@ -24,6 +24,8 @@ type TimelineJoinRow = {
   entry_description: string;
   entry_rotation: number;
   entry_type: TimelineEntryType;
+  entry_cover_x: number;
+  entry_cover_y: number;
   image_id: string | null;
   image_url: string | null;
   image_text: string | null;
@@ -60,6 +62,8 @@ function getTimelineBySpace(spaceId: string): TimelineEntry[] {
         e.description AS entry_description,
         e.rotation AS entry_rotation,
         e.type AS entry_type,
+        e.cover_x AS entry_cover_x,
+        e.cover_y AS entry_cover_y,
         i.id AS image_id,
         i.image_url AS image_url,
         i.text AS image_text
@@ -83,6 +87,10 @@ function getTimelineBySpace(spaceId: string): TimelineEntry[] {
         description: row.entry_description || '',
         rotation: row.entry_rotation || 0,
         type: row.entry_type || 'timeline',
+        coverFocus: {
+          x: Number.isFinite(row.entry_cover_x) ? row.entry_cover_x : 50,
+          y: Number.isFinite(row.entry_cover_y) ? row.entry_cover_y : 42,
+        },
         images: [],
       };
       entryMap.set(row.entry_id, entry);
@@ -220,8 +228,8 @@ const saveSpaceSnapshotTx = db.transaction((space: Space) => {
 
   const insertEntry = db.prepare(
     `
-      INSERT INTO timeline_entries (id, space_id, title, date, description, rotation, type)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO timeline_entries (id, space_id, title, date, description, rotation, type, cover_x, cover_y)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
   );
   const insertImage = db.prepare(
@@ -241,6 +249,8 @@ const saveSpaceSnapshotTx = db.transaction((space: Space) => {
       entry.description ?? '',
       entry.rotation ?? 0,
       entry.type ?? 'timeline',
+      entry.coverFocus?.x ?? 50,
+      entry.coverFocus?.y ?? 42,
     );
 
     for (const image of entry.images ?? []) {
