@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
-import { Plus, X, Image as ImageIcon, Calendar, ChevronDown, MessageSquare, Clock, Camera, Star, MapPin, Heart, Sparkles, ImagePlus, ChevronRight, ChevronLeft, ChevronUp, ArrowLeft, Palette } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { Plus, X, Image as ImageIcon, Calendar, ChevronDown, MessageSquare, Clock, Camera, Star, MapPin, Heart, Sparkles, ImagePlus, ChevronRight, ChevronLeft, ChevronUp, ArrowLeft, Palette, Pencil, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence, useScroll, useSpring } from 'motion/react';
+import {createSpace, deleteSpace, fetchSpaces, saveSpaceSnapshot, updateSpaceMeta, uploadImage} from './lib/api';
+import type {Space, TimelineEntry, TreeholeEntry} from './types';
 
 // --- Themes ---
 export type ThemeName = 'default' | 'anime' | 'scifi' | 'retro' | 'fantasy';
@@ -116,76 +118,7 @@ export const THEMES = {
 export const ThemeContext = React.createContext(THEMES.default);
 export const useTheme = () => React.useContext(ThemeContext);
 
-// --- Types ---
-export interface Space {
-  id: string;
-  name: string;
-  avatarImage: string;
-  heroImage: string;
-  description: string;
-  entries: TimelineEntry[];
-  treeholeEntries: TreeholeEntry[];
-}
-type TimelineImage = { id: string; imageUrl: string; text?: string; };
-type TimelineEntry = { id: string; title: string; date: string; description?: string; images: TimelineImage[]; rotation: number; type?: 'timeline' | 'album' | 'loose_photo'; };
-type TreeholeEntry = { id: string; date: string; text: string; color: string; rotation: number; };
-
-// --- Initial Data ---
-const initialTimeline: TimelineEntry[] = [
-  {
-    id: 't1',
-    title: '《大奉打更人》杀青',
-    date: '2023-12-05',
-    description: '历经数月的拍摄，终于迎来了杀青。感谢剧组所有人的付出。',
-    rotation: -2,
-    images: [
-      { id: 'img1', imageUrl: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=800&q=80', text: '临安公主红衣似火，明艳动人。' },
-      { id: 'img1_2', imageUrl: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=800&q=80', text: '杀青现场的阳光正好✨' }
-    ]
-  },
-  {
-    id: 't2',
-    title: '《卿卿日常》开播',
-    date: '2022-11-10',
-    description: '一部充满欢笑与温情的剧集，希望大家喜欢李薇。',
-    rotation: 1.5,
-    images: [
-      { id: 'img2', imageUrl: 'https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?auto=format&fit=crop&w=800&q=80', text: '李薇的笑容治愈了一切。' },
-      { id: 'img2_2', imageUrl: 'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?auto=format&fit=crop&w=800&q=80', text: '剧组日常花絮' },
-      { id: 'img2_3', imageUrl: 'https://images.unsplash.com/photo-1508622222024-5aa1541450ae?auto=format&fit=crop&w=800&q=80', text: '冬日里的温暖' }
-    ]
-  },
-  {
-    id: 't3',
-    title: '《如此可爱的我们》上线',
-    date: '2020-07-31',
-    description: '青春里最明媚的一抹色彩，黄橙子来啦。',
-    rotation: -1,
-    images: [
-      { id: 'img3', imageUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=800&q=80', text: '眼睛里有星星，笑起来像春天的风。' },
-      { id: 'img3_2', imageUrl: 'https://images.unsplash.com/photo-1440589473619-3cde28941638?auto=format&fit=crop&w=800&q=80', text: '青春的记忆' }
-    ]
-  },
-  {
-    id: 't4',
-    title: '日常碎片',
-    date: '2023-02-14',
-    description: '一些零碎的日常记录。',
-    rotation: 2,
-    images: [
-      { id: 'img4', imageUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80', text: '情人节快乐呀💕' }
-    ]
-  }
-];
-
 const treeholeColors = ['bg-[#fff0f3]', 'bg-[#fdf4ff]', 'bg-[#f0fdf4]', 'bg-[#fffbeb]', 'bg-[#f0f9ff]'];
-
-const initialTreehole: TreeholeEntry[] = [
-  { id: 'th1', date: '2023-11-20', text: '今天重温了《卿卿日常》，还是会被李薇的笑容治愈。希望你每天都开心！', color: 'bg-[#fff0f3]', rotation: -2 },
-  { id: 'th2', date: '2023-10-14', text: '生日快乐！新的一岁要继续闪闪发光呀✨', color: 'bg-[#fffbeb]', rotation: 1.5 },
-  { id: 'th3', date: '2023-09-05', text: '期待你的新剧，无论什么角色都相信你能诠释得很好。', color: 'bg-[#f0f9ff]', rotation: -1 },
-  { id: 'th4', date: '2023-08-22', text: '今天天气很好，想到了你明媚的笑容☀️', color: 'bg-[#f0fdf4]', rotation: 2 },
-];
 
 // --- Safe Image Component ---
 function SafeImage({ src, alt, className, onClick }: { src?: string, alt?: string, className?: string, onClick?: () => void }) {
@@ -242,6 +175,7 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
   const [activeTab, setActiveTab] = useState<'timeline' | 'album' | 'treehole'>('timeline');
   const [lightboxData, setLightboxData] = useState<{ url: string, text?: string } | null>(null);
   const [expandedAlbumId, setExpandedAlbumId] = useState<string | null>(null);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
   const theme = useTheme();
 
   // Customizable Hero and Avatar
@@ -249,22 +183,44 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
   const [avatarImage, setAvatarImage] = useState(space.avatarImage);
 
   React.useEffect(() => {
+    setTimelineEntries(space.entries);
+    setTreeholeEntries(space.treeholeEntries);
+    setHeroImage(space.heroImage);
+    setAvatarImage(space.avatarImage);
+  }, [space.id, space.entries, space.treeholeEntries, space.heroImage, space.avatarImage]);
+
+  React.useEffect(() => {
     onUpdateSpace({
-      ...space,
+      id: space.id,
+      name: space.name,
+      description: space.description,
       entries: timelineEntries,
       treeholeEntries,
       heroImage,
-      avatarImage
+      avatarImage,
     });
-  }, [timelineEntries, treeholeEntries, heroImage, avatarImage]);
+  }, [timelineEntries, treeholeEntries, heroImage, avatarImage, onUpdateSpace, space.id, space.name, space.description]);
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, setter: (url: string) => void) => {
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, setter: (url: string) => void) => {
     const file = e.target.files?.[0];
     if (file) {
-      const url = URL.createObjectURL(file);
-      setter(url);
+      setIsUploadingImage(true);
+      try {
+        const url = await uploadImage(file);
+        setter(url);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '图片上传失败';
+        window.alert(message);
+      } finally {
+        setIsUploadingImage(false);
+      }
     }
   };
+
+  const handleUploadImage = async (file: File): Promise<string> => uploadImage(file);
+
+  const sortByDateDesc = <T extends {date: string}>(items: T[]): T[] =>
+    [...items].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   const handleAddEntry = (type: 'timeline' | 'album' | 'treehole', data: any) => {
     const newId = Date.now().toString();
@@ -280,7 +236,7 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
           images: imageUrl ? [{ id: newId, imageUrl, text }] : [],
           type: 'timeline'
         };
-        setTimelineEntries([newEntry, ...timelineEntries].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+        setTimelineEntries(sortByDateDesc([newEntry, ...timelineEntries]));
       } else {
         const updatedEntries = timelineEntries.map(entry => {
           if (entry.id === eventId) {
@@ -307,7 +263,7 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
           images: imageUrl ? [{ id: newId, imageUrl, text }] : [],
           type: 'loose_photo'
         };
-        setTimelineEntries([newEntry, ...timelineEntries].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+        setTimelineEntries(sortByDateDesc([newEntry, ...timelineEntries]));
       } else if (eventId === 'new') {
         const trimmedTitle = title?.trim() || '未命名相册';
         const newEntry: TimelineEntry = {
@@ -319,7 +275,7 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
           images: imageUrl ? [{ id: newId, imageUrl, text }] : [],
           type: 'album'
         };
-        setTimelineEntries([newEntry, ...timelineEntries].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+        setTimelineEntries(sortByDateDesc([newEntry, ...timelineEntries]));
       } else {
         // Check if album exists by ID
         const updatedEntries = timelineEntries.map(entry => {
@@ -336,10 +292,95 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
     } else if (type === 'treehole') {
       const color = treeholeColors[Math.floor(Math.random() * treeholeColors.length)];
       const rotation = (Math.random() * 4) - 2;
-      setTreeholeEntries([{ id: newId, color, rotation, ...data }, ...treeholeEntries].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+      setTreeholeEntries(sortByDateDesc([{ id: newId, color, rotation, ...data }, ...treeholeEntries]));
     }
     setIsModalOpen(false);
     setActiveTab(type === 'timeline' ? 'timeline' : type === 'album' ? 'album' : 'treehole');
+  };
+
+  const handleDeleteTimelineEntry = (entryId: string) => {
+    if (!window.confirm('确认删除这条记录吗？')) return;
+    setTimelineEntries((prev) => prev.filter((entry) => entry.id !== entryId));
+  };
+
+  const handleEditTimelineEntry = (entry: TimelineEntry) => {
+    if (entry.type === 'loose_photo') {
+      const nextDate = window.prompt('修改日期', entry.date);
+      if (nextDate === null || !nextDate.trim()) return;
+      const currentText = entry.images[0]?.text ?? '';
+      const nextText = window.prompt('修改照片备注', currentText);
+      if (nextText === null) return;
+
+      setTimelineEntries((prev) =>
+        sortByDateDesc(
+          prev.map((item) =>
+            item.id === entry.id
+              ? {
+                  ...item,
+                  date: nextDate.trim(),
+                  images:
+                    item.images.length > 0
+                      ? [{...item.images[0], text: nextText.trim()}, ...item.images.slice(1)]
+                      : item.images,
+                }
+              : item,
+          ),
+        ),
+      );
+      return;
+    }
+
+    const defaultTitle = entry.type === 'album' ? entry.title || '未命名相册' : entry.title;
+    const nextTitle = window.prompt('修改标题', defaultTitle);
+    if (nextTitle === null || !nextTitle.trim()) return;
+    const nextDate = window.prompt('修改日期', entry.date);
+    if (nextDate === null || !nextDate.trim()) return;
+    const nextDescription =
+      entry.type === 'timeline'
+        ? window.prompt('修改描述（可留空）', entry.description ?? '')
+        : entry.description ?? '';
+    if (entry.type === 'timeline' && nextDescription === null) return;
+
+    setTimelineEntries((prev) =>
+      sortByDateDesc(
+        prev.map((item) =>
+          item.id === entry.id
+            ? {
+                ...item,
+                title: nextTitle.trim(),
+                date: nextDate.trim(),
+                description: entry.type === 'timeline' ? nextDescription?.trim() ?? '' : item.description,
+              }
+            : item,
+        ),
+      ),
+    );
+  };
+
+  const handleDeleteTreeholeEntry = (entryId: string) => {
+    if (!window.confirm('确认删除这条树洞留言吗？')) return;
+    setTreeholeEntries((prev) => prev.filter((entry) => entry.id !== entryId));
+  };
+
+  const handleEditTreeholeEntry = (entry: TreeholeEntry) => {
+    const nextDate = window.prompt('修改日期', entry.date);
+    if (nextDate === null || !nextDate.trim()) return;
+    const nextText = window.prompt('修改留言', entry.text);
+    if (nextText === null || !nextText.trim()) return;
+
+    setTreeholeEntries((prev) =>
+      sortByDateDesc(
+        prev.map((item) =>
+          item.id === entry.id
+            ? {
+                ...item,
+                date: nextDate.trim(),
+                text: nextText.trim(),
+              }
+            : item,
+        ),
+      ),
+    );
   };
 
   return (
@@ -375,7 +416,7 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
 
         <label className={`flex items-center justify-center w-12 h-12 ${theme.cardBg} backdrop-blur-md rounded-full cursor-pointer hover:opacity-80 transition-all shadow-sm border ${theme.cardBorder} group`}>
           <ImagePlus className={`${theme.accent} group-hover:scale-110 transition-transform`} size={20} />
-          <input type="file" className="hidden" accept="image/*" onChange={(e) => handleImageUpload(e, setHeroImage)} />
+          <input type="file" className="hidden" accept="image/*" disabled={isUploadingImage} onChange={(e) => void handleImageUpload(e, setHeroImage)} />
         </label>
       </div>
 
@@ -396,7 +437,7 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
               <label className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity duration-300">
                 <Camera className="text-white mb-1" size={24} />
                 <span className="text-white text-xs font-medium">更换头像</span>
-                <input type="file" className="hidden" accept="image/*" onChange={(e) => handleImageUpload(e, setAvatarImage)} />
+                <input type="file" className="hidden" accept="image/*" disabled={isUploadingImage} onChange={(e) => void handleImageUpload(e, setAvatarImage)} />
               </label>
             </motion.div>
           </div>
@@ -467,7 +508,9 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
             >
               <TimelineView 
                 entries={timelineEntries.filter(e => e.type !== 'album' && e.type !== 'loose_photo')} 
-                onImageClick={(url, text) => setLightboxData({ url, text })} 
+                onImageClick={(url, text) => setLightboxData({ url, text })}
+                onEditEntry={handleEditTimelineEntry}
+                onDeleteEntry={handleDeleteTimelineEntry}
               />
             </motion.div>
           )}
@@ -479,6 +522,8 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
               expandedAlbumId={expandedAlbumId}
               setExpandedAlbumId={setExpandedAlbumId}
               onImageClick={(url, text) => setLightboxData({ url, text })}
+              onEditEntry={handleEditTimelineEntry}
+              onDeleteEntry={handleDeleteTimelineEntry}
             />
           )}
 
@@ -495,6 +540,22 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
                   initial={{ opacity: 0, scale: 0.9, rotate: msg.rotation - 5 }} animate={{ opacity: 1, scale: 1, rotate: msg.rotation }} transition={{ duration: 0.5, delay: (i % 10) * 0.1, type: "spring" }}
                   className={`${msg.color} p-8 rounded-3xl shadow-[0_4px_20px_rgba(244,114,182,0.06)] hover:shadow-[0_8px_30px_rgba(244,114,182,0.12)] transition-shadow duration-300 relative border border-white`}
                 >
+                  <div className="absolute top-3 right-3 flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => handleEditTreeholeEntry(msg)}
+                      className="w-8 h-8 flex items-center justify-center rounded-full bg-white/70 text-stone-500 hover:text-stone-700 transition-colors"
+                    >
+                      <Pencil size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteTreeholeEntry(msg.id)}
+                      className="w-8 h-8 flex items-center justify-center rounded-full bg-white/70 text-stone-500 hover:text-red-500 transition-colors"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
                   <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-14 h-6 bg-white/80 backdrop-blur-sm shadow-[0_2px_5px_rgba(0,0,0,0.05)] rotate-[-2deg] rounded-sm"></div>
                   <p className="font-medium text-stone-700 text-lg leading-relaxed mb-8 mt-2 whitespace-pre-wrap">{msg.text}</p>
                   <div className="text-right flex items-center justify-end gap-1">
@@ -524,6 +585,7 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
             onClose={() => setIsModalOpen(false)}
             onAdd={handleAddEntry}
             existingEvents={timelineEntries}
+            onUploadImage={handleUploadImage}
           />
         )}
       </AnimatePresence>
@@ -563,7 +625,17 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
 
 // --- Subcomponents ---
 
-function TimelineView({ entries, onImageClick }: { entries: TimelineEntry[], onImageClick: (url: string, text?: string) => void }) {
+function TimelineView({
+  entries,
+  onImageClick,
+  onEditEntry,
+  onDeleteEntry,
+}: {
+  entries: TimelineEntry[];
+  onImageClick: (url: string, text?: string) => void;
+  onEditEntry: (entry: TimelineEntry) => void;
+  onDeleteEntry: (entryId: string) => void;
+}) {
   const theme = useTheme();
   const containerRef = React.useRef<HTMLDivElement>(null);
   const { scrollYProgress } = useScroll({
@@ -702,7 +774,9 @@ function TimelineView({ entries, onImageClick }: { entries: TimelineEntry[], onI
                     <TimelineFolder 
                       entry={entry} 
                       index={globalIndex} 
-                      onImageClick={onImageClick} 
+                      onImageClick={onImageClick}
+                      onEditEntry={onEditEntry}
+                      onDeleteEntry={onDeleteEntry}
                     />
                   </motion.div>
                 )})}
@@ -715,7 +789,19 @@ function TimelineView({ entries, onImageClick }: { entries: TimelineEntry[], onI
   );
 }
 
-function TimelineFolder({ entry, index, onImageClick }: { entry: TimelineEntry; index: number; onImageClick: (url: string, text?: string) => void }) {
+function TimelineFolder({
+  entry,
+  index,
+  onImageClick,
+  onEditEntry,
+  onDeleteEntry,
+}: {
+  entry: TimelineEntry;
+  index: number;
+  onImageClick: (url: string, text?: string) => void;
+  onEditEntry: (entry: TimelineEntry) => void;
+  onDeleteEntry: (entryId: string) => void;
+}) {
   const theme = useTheme();
   const [isExpanded, setIsExpanded] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -786,6 +872,28 @@ function TimelineFolder({ entry, index, onImageClick }: { entry: TimelineEntry; 
             
             {/* Main Card (The "Envelope") */}
             <div className={`relative ${theme.cardBg} p-5 shadow-sm border ${theme.cardBorder} transition-all duration-300 w-full hover:shadow-md hover:-translate-y-1 z-20`}>
+              <div className="absolute top-3 right-3 z-30 flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onEditEntry(entry);
+                  }}
+                  className={`${theme.cardBg} backdrop-blur-sm border ${theme.cardBorder} p-1.5 rounded-full ${theme.textMuted} hover:opacity-80 transition-colors`}
+                >
+                  <Pencil size={14} />
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDeleteEntry(entry.id);
+                  }}
+                  className={`${theme.cardBg} backdrop-blur-sm border ${theme.cardBorder} p-1.5 rounded-full ${theme.textMuted} hover:text-red-500 transition-colors`}
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
               
               {/* Clickable Header/Cover Area */}
               <div className="cursor-pointer" onClick={() => setIsExpanded(!isExpanded)}>
@@ -948,15 +1056,21 @@ function TimelineFolder({ entry, index, onImageClick }: { entry: TimelineEntry; 
   );
 }
 
-const TAPE_COLORS = [
-  'bg-white/50 border-white/30',
-  'bg-rose-200/50 border-rose-200/30',
-  'bg-sky-200/50 border-sky-200/30',
-  'bg-amber-200/50 border-amber-200/30',
-  'bg-teal-200/50 border-teal-200/30'
-];
-
-function AlbumMasonry({ entries, expandedAlbumId, setExpandedAlbumId, onImageClick }: { entries: TimelineEntry[], expandedAlbumId: string | null, setExpandedAlbumId: (id: string | null) => void, onImageClick: (url: string, text?: string) => void }) {
+function AlbumMasonry({
+  entries,
+  expandedAlbumId,
+  setExpandedAlbumId,
+  onImageClick,
+  onEditEntry,
+  onDeleteEntry,
+}: {
+  entries: TimelineEntry[];
+  expandedAlbumId: string | null;
+  setExpandedAlbumId: (id: string | null) => void;
+  onImageClick: (url: string, text?: string) => void;
+  onEditEntry: (entry: TimelineEntry) => void;
+  onDeleteEntry: (entryId: string) => void;
+}) {
   const theme = useTheme();
   const cols = useMasonryCols();
   
@@ -973,22 +1087,24 @@ function AlbumMasonry({ entries, expandedAlbumId, setExpandedAlbumId, onImageCli
     >
       {columns.map((col, colIndex) => (
         <div key={colIndex} className="flex-1 flex flex-col gap-6 md:gap-8">
-          {col.map((entry, i) => (
+          {col.map((entry) => (
             entry.type === 'loose_photo' ? (
               <LoosePhotoPolaroid
                 key={entry.id}
                 entry={entry}
-                index={i}
                 onImageClick={onImageClick}
+                onEditEntry={onEditEntry}
+                onDeleteEntry={onDeleteEntry}
               />
             ) : (
               <AlbumStack 
                 key={entry.id} 
                 entry={entry} 
-                index={i} 
                 isExpanded={expandedAlbumId === entry.id}
                 onToggle={() => setExpandedAlbumId(expandedAlbumId === entry.id ? null : entry.id)}
-                onImageClick={onImageClick} 
+                onImageClick={onImageClick}
+                onEditEntry={onEditEntry}
+                onDeleteEntry={onDeleteEntry}
               />
             )
           ))}
@@ -998,7 +1114,12 @@ function AlbumMasonry({ entries, expandedAlbumId, setExpandedAlbumId, onImageCli
   );
 }
 
-const LoosePhotoPolaroid: React.FC<{ entry: TimelineEntry; index: number; onImageClick: (url: string, text?: string) => void; }> = ({ entry, index, onImageClick }) => {
+const LoosePhotoPolaroid: React.FC<{
+  entry: TimelineEntry;
+  onImageClick: (url: string, text?: string) => void;
+  onEditEntry: (entry: TimelineEntry) => void;
+  onDeleteEntry: (entryId: string) => void;
+}> = ({ entry, onImageClick, onEditEntry, onDeleteEntry }) => {
   const theme = useTheme();
   const img = entry.images[0];
   
@@ -1010,6 +1131,28 @@ const LoosePhotoPolaroid: React.FC<{ entry: TimelineEntry; index: number; onImag
       className="relative w-full group mb-6"
       style={{ transform: `rotate(${entry.rotation}deg)` }}
     >
+      <div className="absolute top-2 right-2 z-30 flex items-center gap-1">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onEditEntry(entry);
+          }}
+          className={`${theme.cardBg} border ${theme.cardBorder} p-1 rounded-full ${theme.textMuted} hover:opacity-80 transition-colors`}
+        >
+          <Pencil size={12} />
+        </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDeleteEntry(entry.id);
+          }}
+          className={`${theme.cardBg} border ${theme.cardBorder} p-1 rounded-full ${theme.textMuted} hover:text-red-500 transition-colors`}
+        >
+          <Trash2 size={12} />
+        </button>
+      </div>
       <div 
         className={`relative z-20 shadow-sm rounded-sm overflow-hidden transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-md cursor-zoom-in border ${theme.cardBorder}`}
         onClick={() => onImageClick(img.imageUrl, img.text)}
@@ -1028,11 +1171,15 @@ const LoosePhotoPolaroid: React.FC<{ entry: TimelineEntry; index: number; onImag
   );
 };
 
-const AlbumStack: React.FC<{ entry: TimelineEntry; index: number; onImageClick: (url: string, text?: string) => void; isExpanded: boolean; onToggle: () => void; }> = ({ entry, index, onImageClick, isExpanded, onToggle }) => {
+const AlbumStack: React.FC<{
+  entry: TimelineEntry;
+  onImageClick: (url: string, text?: string) => void;
+  isExpanded: boolean;
+  onToggle: () => void;
+  onEditEntry: (entry: TimelineEntry) => void;
+  onDeleteEntry: (entryId: string) => void;
+}> = ({ entry, onImageClick, isExpanded, onToggle, onEditEntry, onDeleteEntry }) => {
   const theme = useTheme();
-  const colors = ['bg-pink-50/50 border-pink-100/50', 'bg-blue-50/50 border-blue-100/50', 'bg-green-50/50 border-green-100/50', 'bg-amber-50/50 border-amber-100/50'];
-  const themeClass = colors[index % colors.length];
-  const lineColor = ['border-pink-200/60', 'border-blue-200/60', 'border-green-200/60', 'border-amber-200/60'][index % colors.length];
 
   return (
     <motion.div layout="position" className="relative flex flex-col w-full mb-6">
@@ -1048,6 +1195,28 @@ const AlbumStack: React.FC<{ entry: TimelineEntry; index: number; onImageClick: 
             onClick={onToggle}
             style={{ transform: `rotate(${entry.rotation}deg)` }}
           >
+            <div className="absolute top-2 right-2 z-30 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEditEntry(entry);
+                }}
+                className={`${theme.cardBg} border ${theme.cardBorder} p-1.5 rounded-full ${theme.textMuted} hover:opacity-80 transition-colors`}
+              >
+                <Pencil size={12} />
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDeleteEntry(entry.id);
+                }}
+                className={`${theme.cardBg} border ${theme.cardBorder} p-1.5 rounded-full ${theme.textMuted} hover:text-red-500 transition-colors`}
+              >
+                <Trash2 size={12} />
+              </button>
+            </div>
             {/* Photo Pile Effect (Background layers) */}
             {entry.images.slice(1, 4).map((img, i) => (
               <div 
@@ -1093,12 +1262,35 @@ const AlbumStack: React.FC<{ entry: TimelineEntry; index: number; onImageClick: 
                 <h3 className={`${theme.textMain} ${theme.fontTitle} font-bold text-lg tracking-wider`}>{entry.title}</h3>
                 <p className={`${theme.textMuted} text-xs font-medium mt-1`}>{entry.date}</p>
               </div>
-              <button 
-                onClick={(e) => { e.stopPropagation(); onToggle(); }}
-                className={`${theme.textMuted} hover:opacity-80 transition-colors ${theme.cardBg} backdrop-blur-sm p-1.5 rounded-full shadow-sm border ${theme.cardBorder}`}
-              >
-                <ChevronUp size={16} strokeWidth={2.5} />
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onEditEntry(entry);
+                  }}
+                  className={`${theme.textMuted} hover:opacity-80 transition-colors ${theme.cardBg} backdrop-blur-sm p-1.5 rounded-full shadow-sm border ${theme.cardBorder}`}
+                >
+                  <Pencil size={14} />
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDeleteEntry(entry.id);
+                  }}
+                  className={`${theme.textMuted} hover:text-red-500 transition-colors ${theme.cardBg} backdrop-blur-sm p-1.5 rounded-full shadow-sm border ${theme.cardBorder}`}
+                >
+                  <Trash2 size={14} />
+                </button>
+                <button 
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); onToggle(); }}
+                  className={`${theme.textMuted} hover:opacity-80 transition-colors ${theme.cardBg} backdrop-blur-sm p-1.5 rounded-full shadow-sm border ${theme.cardBorder}`}
+                >
+                  <ChevronUp size={16} strokeWidth={2.5} />
+                </button>
+              </div>
             </div>
 
             {/* Photos */}
@@ -1133,7 +1325,17 @@ const AlbumStack: React.FC<{ entry: TimelineEntry; index: number; onImageClick: 
   );
 }
 
-function AddEntryModal({ onClose, onAdd, existingEvents }: { onClose: () => void; onAdd: (type: 'timeline' | 'album' | 'treehole', data: any) => void, existingEvents: TimelineEntry[] }) {
+function AddEntryModal({
+  onClose,
+  onAdd,
+  existingEvents,
+  onUploadImage,
+}: {
+  onClose: () => void;
+  onAdd: (type: 'timeline' | 'album' | 'treehole', data: any) => void;
+  existingEvents: TimelineEntry[];
+  onUploadImage: (file: File) => Promise<string>;
+}) {
   const theme = useTheme();
   const [type, setType] = useState<'timeline' | 'album' | 'treehole'>('timeline');
   const [eventId, setEventId] = useState<'new' | string>('new');
@@ -1142,6 +1344,23 @@ function AddEntryModal({ onClose, onAdd, existingEvents }: { onClose: () => void
   const [description, setDescription] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [text, setText] = useState('');
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+
+  const handleImageInput = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploadingImage(true);
+    try {
+      const url = await onUploadImage(file);
+      setImageUrl(url);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '图片上传失败';
+      window.alert(message);
+    } finally {
+      setIsUploadingImage(false);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1212,7 +1431,7 @@ function AddEntryModal({ onClose, onAdd, existingEvents }: { onClose: () => void
                     className={`w-full pl-12 pr-10 py-3 bg-transparent border ${theme.cardBorder} rounded-xl focus:outline-none focus:ring-2 focus:ring-black/10 transition-all font-sans ${theme.textMain} font-bold appearance-none`}
                   >
                     <option value="new">+ 创建新事件</option>
-                    {existingEvents.filter(e => e.type !== 'album').map(ev => (
+                    {existingEvents.filter(e => e.type !== 'album' && e.type !== 'loose_photo').map(ev => (
                       <option key={ev.id} value={ev.id}>{ev.title}</option>
                     ))}
                   </select>
@@ -1339,13 +1558,7 @@ function AddEntryModal({ onClose, onAdd, existingEvents }: { onClose: () => void
                       <span className="text-sm font-bold">点击选择本地图片</span>
                     </div>
                   )}
-                  <input
-                    type="file" className="hidden" accept="image/*"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) setImageUrl(URL.createObjectURL(file));
-                    }}
-                  />
+                  <input type="file" className="hidden" accept="image/*" disabled={isUploadingImage} onChange={(e) => void handleImageInput(e)} />
                 </label>
               </motion.div>
 
@@ -1391,9 +1604,10 @@ function AddEntryModal({ onClose, onAdd, existingEvents }: { onClose: () => void
 
           <button
             type="submit"
-            className="w-full py-4 bg-pink-400 text-white rounded-xl hover:bg-pink-500 transition-colors duration-300 font-bold tracking-widest mt-4 shadow-[0_8px_20px_rgba(244,114,182,0.3)] text-lg"
+            disabled={isUploadingImage}
+            className="w-full py-4 bg-pink-400 text-white rounded-xl hover:bg-pink-500 transition-colors duration-300 font-bold tracking-widest mt-4 shadow-[0_8px_20px_rgba(244,114,182,0.3)] text-lg disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {type === 'timeline' ? '保存至档案' : '投入树洞'}
+            {type === 'timeline' ? '保存至档案' : type === 'album' ? '保存至相册' : '投入树洞'}
           </button>
         </form>
       </motion.div>
@@ -1402,26 +1616,79 @@ function AddEntryModal({ onClose, onAdd, existingEvents }: { onClose: () => void
 }
 
 // --- Portal Component ---
-function Portal({ spaces, onSelectSpace, onCreateSpace }: { spaces: Space[], onSelectSpace: (id: string) => void, onCreateSpace: (name: string, avatar: string) => void }) {
+function Portal({
+  spaces,
+  onSelectSpace,
+  onCreateSpace,
+  onRenameSpace,
+  onDeleteSpace,
+}: {
+  spaces: Space[];
+  onSelectSpace: (id: string) => void;
+  onCreateSpace: (name: string, avatar: string) => Promise<void>;
+  onRenameSpace: (id: string, name: string) => Promise<void>;
+  onDeleteSpace: (id: string) => Promise<void>;
+}) {
   const [isCreating, setIsCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const [newAvatar, setNewAvatar] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
 
-  const handleCreate = (e: React.FormEvent) => {
+  const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (newName && newAvatar) {
-      onCreateSpace(newName, newAvatar);
-      setIsCreating(false);
-      setNewName('');
-      setNewAvatar('');
+      setIsSubmitting(true);
+      try {
+        await onCreateSpace(newName, newAvatar);
+        setIsCreating(false);
+        setNewName('');
+        setNewAvatar('');
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '创建空间失败';
+        window.alert(message);
+      } finally {
+        setIsSubmitting(false);
+      }
     }
   };
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const url = URL.createObjectURL(file);
-      setNewAvatar(url);
+      setIsUploadingAvatar(true);
+      try {
+        const url = await uploadImage(file);
+        setNewAvatar(url);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '头像上传失败';
+        window.alert(message);
+      } finally {
+        setIsUploadingAvatar(false);
+      }
+    }
+  };
+
+  const handleRenameSpace = async (space: Space) => {
+    const nextName = window.prompt('修改空间名称', space.name);
+    if (nextName === null || !nextName.trim() || nextName.trim() === space.name) return;
+
+    try {
+      await onRenameSpace(space.id, nextName.trim());
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '修改空间名称失败';
+      window.alert(message);
+    }
+  };
+
+  const handleDeleteSpace = async (space: Space) => {
+    if (!window.confirm(`确认删除空间「${space.name}」吗？此操作不可撤销。`)) return;
+
+    try {
+      await onDeleteSpace(space.id);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '删除空间失败';
+      window.alert(message);
     }
   };
 
@@ -1459,6 +1726,28 @@ function Portal({ spaces, onSelectSpace, onCreateSpace }: { spaces: Space[], onS
                 style={{ rotate: `${rotation}deg` }}
                 whileHover={{ scale: 1.05, rotate: 0, zIndex: 50, transition: { duration: 0.4 } }}
               >
+                <div className="absolute top-2 right-2 z-40 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void handleRenameSpace(space);
+                    }}
+                    className="w-7 h-7 flex items-center justify-center rounded-full bg-white/85 text-stone-500 hover:text-stone-700 shadow-sm"
+                  >
+                    <Pencil size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void handleDeleteSpace(space);
+                    }}
+                    className="w-7 h-7 flex items-center justify-center rounded-full bg-white/85 text-stone-500 hover:text-red-500 shadow-sm"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
                 {/* Book Back Cover & Pages Edge */}
                 <div className="absolute inset-0 bg-[#EFECE4] shadow-md border border-stone-300/60 rounded-r-md rounded-l-sm transition-all duration-700 z-0 flex justify-end overflow-hidden">
                   {/* Simulated pages edge */}
@@ -1577,14 +1866,15 @@ function Portal({ spaces, onSelectSpace, onCreateSpace }: { spaces: Space[], onS
                           <p className="text-xs font-serif tracking-widest text-stone-400">UPLOAD PHOTO</p>
                         </div>
                       )}
-                      <input type="file" className="hidden" accept="image/*" onChange={handleImageUpload} required={!newAvatar} />
+                      <input type="file" className="hidden" accept="image/*" disabled={isUploadingAvatar} onChange={(e) => void handleImageUpload(e)} required={!newAvatar} />
                     </label>
                   </div>
                 </div>
 
                 <button 
                   type="submit"
-                  className="w-full py-4 bg-stone-800 text-[#F4F1EA] font-serif text-sm tracking-[0.2em] hover:bg-stone-700 transition-colors"
+                  disabled={isSubmitting || isUploadingAvatar}
+                  className="w-full py-4 bg-stone-800 text-[#F4F1EA] font-serif text-sm tracking-[0.2em] hover:bg-stone-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   CREATE
                 </button>
@@ -1599,55 +1889,134 @@ function Portal({ spaces, onSelectSpace, onCreateSpace }: { spaces: Space[], onS
 
 // --- Main App Entry ---
 export default function App() {
-  const [themeName, setThemeName] = useState<ThemeName>('default');
-  const [spaces, setSpaces] = useState<Space[]>([
-    {
-      id: '1',
-      name: '田曦薇',
-      avatarImage: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
-      heroImage: 'https://images.unsplash.com/photo-1518599904199-0ca897819ddb?auto=format&fit=crop&w=2000&q=80',
-      description: '笑容明媚，眼若星辰。\n这里是属于她的元气角落，记录每一个闪光瞬间。',
-      entries: initialTimeline,
-      treeholeEntries: initialTreehole,
-    }
-  ]);
+  const [themeName, setThemeName] = useState<ThemeName>(() => {
+    const stored = localStorage.getItem('journal-theme') as ThemeName | null;
+    return stored && stored in THEMES ? stored : 'default';
+  });
+  const [spaces, setSpaces] = useState<Space[]>([]);
   const [currentSpaceId, setCurrentSpaceId] = useState<string | null>(null);
+  const [isBootstrapping, setIsBootstrapping] = useState(true);
+  const [bootstrapError, setBootstrapError] = useState<string | null>(null);
+  const saveTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  React.useEffect(() => {
+    localStorage.setItem('journal-theme', themeName);
+  }, [themeName]);
+
+  React.useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const data = await fetchSpaces();
+        if (!mounted) return;
+        setSpaces(data);
+        setBootstrapError(null);
+      } catch (error) {
+        if (!mounted) return;
+        const message = error instanceof Error ? error.message : '加载空间数据失败';
+        setBootstrapError(message);
+      } finally {
+        if (mounted) setIsBootstrapping(false);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+      (Object.values(saveTimersRef.current) as Array<ReturnType<typeof setTimeout>>).forEach((timer) => clearTimeout(timer));
+    };
+  }, []);
+
+  React.useEffect(() => {
+    if (!currentSpaceId) return;
+    const exists = spaces.some((space) => space.id === currentSpaceId);
+    if (!exists) {
+      setCurrentSpaceId(null);
+    }
+  }, [spaces, currentSpaceId]);
 
   const handleUpdateSpace = (updatedSpace: Space) => {
-    setSpaces(spaces.map(s => s.id === updatedSpace.id ? updatedSpace : s));
+    setSpaces((prev) => prev.map((space) => (space.id === updatedSpace.id ? updatedSpace : space)));
+
+    const timerKey = updatedSpace.id;
+    const existingTimer = saveTimersRef.current[timerKey];
+    if (existingTimer) clearTimeout(existingTimer);
+
+    saveTimersRef.current[timerKey] = setTimeout(async () => {
+      try {
+        const saved = await saveSpaceSnapshot(updatedSpace);
+        setSpaces((prev) => prev.map((space) => (space.id === saved.id ? saved : space)));
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.error('Failed to persist space snapshot', error);
+      }
+    }, 400);
   };
 
-  const handleCreateSpace = (name: string, avatarImage: string) => {
-    const newSpace: Space = {
-      id: Date.now().toString(),
+  const handleCreateSpace = async (name: string, avatarImage: string) => {
+    const created = await createSpace({
       name,
       avatarImage,
-      heroImage: 'https://images.unsplash.com/photo-1518599904199-0ca897819ddb?auto=format&fit=crop&w=2000&q=80',
-      description: '记录每一个闪光瞬间。',
-      entries: [],
-      treeholeEntries: [],
-    };
-    setSpaces([...spaces, newSpace]);
+    });
+    setSpaces((prev) => [...prev, created]);
+  };
+
+  const handleRenameSpace = async (id: string, name: string) => {
+    const updated = await updateSpaceMeta(id, {name});
+    setSpaces((prev) => prev.map((space) => (space.id === id ? updated : space)));
+  };
+
+  const handleDeleteSpace = async (id: string) => {
+    await deleteSpace(id);
+    setSpaces((prev) => prev.filter((space) => space.id !== id));
+    if (currentSpaceId === id) {
+      setCurrentSpaceId(null);
+    }
   };
 
   const currentTheme = THEMES[themeName];
+  const currentSpace = currentSpaceId ? spaces.find((space) => space.id === currentSpaceId) ?? null : null;
+
+  if (isBootstrapping) {
+    return (
+      <div className={`min-h-screen flex items-center justify-center ${currentTheme.globalBg} ${currentTheme.textMain}`}>
+        正在加载手账空间...
+      </div>
+    );
+  }
+
+  if (bootstrapError) {
+    return (
+      <div className={`min-h-screen flex flex-col items-center justify-center gap-4 px-6 text-center ${currentTheme.globalBg} ${currentTheme.textMain}`}>
+        <p>加载失败：{bootstrapError}</p>
+        <button
+          type="button"
+          onClick={() => window.location.reload()}
+          className="px-4 py-2 bg-stone-800 text-white rounded-md"
+        >
+          重试
+        </button>
+      </div>
+    );
+  }
 
   return (
     <ThemeContext.Provider value={currentTheme}>
       <div className={`min-h-screen transition-colors duration-500 ${currentTheme.globalBg} ${currentTheme.textMain} ${currentTheme.fontMain}`}>
         <AnimatePresence mode="wait">
-          {currentSpaceId === null ? (
+          {currentSpaceId === null || !currentSpace ? (
             <motion.div key="portal" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.5 }}>
               <Portal 
                 spaces={spaces} 
                 onSelectSpace={setCurrentSpaceId} 
-                onCreateSpace={handleCreateSpace} 
+                onCreateSpace={handleCreateSpace}
+                onRenameSpace={handleRenameSpace}
+                onDeleteSpace={handleDeleteSpace}
               />
             </motion.div>
           ) : (
             <motion.div key="space" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.5 }}>
               <SpaceDetail 
-                space={spaces.find(s => s.id === currentSpaceId)!} 
+                space={currentSpace!} 
                 onBack={() => setCurrentSpaceId(null)} 
                 onUpdateSpace={handleUpdateSpace}
                 themeName={themeName}
