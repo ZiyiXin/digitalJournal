@@ -821,8 +821,38 @@ function TimelineFolder({
   const theme = useTheme();
   const [isExpanded, setIsExpanded] = useState(false);
   const isEven = index % 2 === 0;
+  const [coverRatio, setCoverRatio] = useState(1);
   const coverImage = entry.images.length > 0 ? entry.images[0].imageUrl : 'https://images.unsplash.com/photo-1490750967868-88aa4486c946?auto=format&fit=crop&w=800&q=80';
   const relatedImages = entry.images.slice(1);
+
+  React.useEffect(() => {
+    let active = true;
+    const img = new window.Image();
+    img.onload = () => {
+      if (!active) return;
+      if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+        setCoverRatio(img.naturalWidth / img.naturalHeight);
+      } else {
+        setCoverRatio(1);
+      }
+    };
+    img.onerror = () => {
+      if (active) setCoverRatio(1);
+    };
+    img.src = coverImage;
+    return () => {
+      active = false;
+    };
+  }, [coverImage]);
+
+  const cardWidth = React.useMemo(() => {
+    const ratio = Number.isFinite(coverRatio) && coverRatio > 0 ? coverRatio : 1;
+    const imageWidth =
+      ratio >= 1
+        ? Math.min(292, 188 + (ratio - 1) * 92)
+        : Math.max(136, 188 * ratio);
+    return Math.round(Math.min(316, Math.max(164, imageWidth + 28)));
+  }, [coverRatio]);
 
   return (
     <div className="relative w-full mb-3">
@@ -838,7 +868,10 @@ function TimelineFolder({
         <div className={`ml-12 md:ml-0 md:w-1/2 ${isEven ? 'md:pl-12' : 'md:pr-12'} py-1 flex ${isEven ? 'justify-start' : 'justify-end'}`}>
           
           {/* Clipping/Note Container */}
-          <div className="relative w-full max-w-[19rem] group">
+          <div
+            className="relative w-full group"
+            style={{ width: `${cardWidth}px`, maxWidth: 'calc(100vw - 5.5rem)' }}
+          >
             {/* Washi Tape */}
             <div className={`absolute -top-3 ${isEven ? 'right-8 rotate-[4deg]' : 'left-8 rotate-[-3deg]'} w-16 h-6 ${theme.tape} backdrop-blur-sm z-30 mix-blend-multiply shadow-sm transition-transform duration-300 group-hover:-translate-y-1`}></div>
             
@@ -873,7 +906,7 @@ function TimelineFolder({
                   <SafeImage
                     src={coverImage}
                     alt={entry.title}
-                    className={`w-full h-auto max-h-[190px] object-contain bg-stone-100/70 grayscale-[12%] group-hover:grayscale-0 transition-all duration-500 ${theme.imageFilter}`}
+                    className={`w-full h-auto grayscale-[12%] group-hover:grayscale-0 transition-all duration-500 ${theme.imageFilter}`}
                   />
                   {entry.images.length > 1 && (
                     <div className={`absolute bottom-2 right-2 ${theme.cardBg} backdrop-blur-sm ${theme.textMain} text-[10px] px-2 py-1 font-mono tracking-widest border ${theme.cardBorder}`}>
@@ -923,7 +956,8 @@ function TimelineFolder({
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: isEven ? 24 : -24 }}
                   transition={{ duration: 0.28 }}
-                  className={`hidden md:flex absolute top-2 ${isEven ? '-right-[8.75rem]' : '-left-[8.75rem]'} w-28 flex-col gap-2.5 z-0`}
+                  className="hidden md:flex absolute top-2 w-28 flex-col gap-2.5 z-0"
+                  style={isEven ? { left: 'calc(100% + 0.75rem)' } : { right: 'calc(100% + 0.75rem)' }}
                 >
                   {relatedImages.slice(0, 4).map((img) => (
                     <button
