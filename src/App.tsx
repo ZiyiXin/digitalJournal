@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { Plus, X, Image as ImageIcon, Calendar, ChevronDown, MessageSquare, Clock, Camera, Star, MapPin, Heart, Sparkles, ImagePlus, ChevronRight, ChevronUp, ArrowLeft, Palette, Pencil, Trash2, Crop } from 'lucide-react';
+import { Plus, X, Image as ImageIcon, Calendar, ChevronDown, MessageSquare, Clock, Camera, Star, MapPin, Heart, Sparkles, ImagePlus, ChevronRight, ChevronUp, ArrowLeft, Palette, Pencil, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence, useScroll, useSpring } from 'motion/react';
 import {createSpace, deleteSpace, fetchSpaces, saveSpaceSnapshot, updateSpaceMeta, uploadImage} from './lib/api';
 import type {Space, TimelineEntry, TreeholeEntry} from './types';
@@ -373,23 +373,6 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
     );
   };
 
-  const handleUpdateTimelineCoverFocus = (entryId: string, focus: { x: number; y: number }) => {
-    const clamp = (value: number) => Math.min(100, Math.max(0, value));
-    setTimelineEntries((prev) =>
-      prev.map((entry) =>
-        entry.id === entryId
-          ? {
-              ...entry,
-              coverFocus: {
-                x: clamp(focus.x),
-                y: clamp(focus.y),
-              },
-            }
-          : entry,
-      ),
-    );
-  };
-
   const handleDeleteTreeholeEntry = (entryId: string) => {
     if (!window.confirm('确认删除这条树洞留言吗？')) return;
     setTreeholeEntries((prev) => prev.filter((entry) => entry.id !== entryId));
@@ -544,7 +527,6 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
                 onImageClick={(url, text) => setLightboxData({ url, text })}
                 onEditEntry={handleEditTimelineEntry}
                 onDeleteEntry={handleDeleteTimelineEntry}
-                onUpdateCoverFocus={handleUpdateTimelineCoverFocus}
               />
             </motion.div>
           )}
@@ -664,13 +646,11 @@ function TimelineView({
   onImageClick,
   onEditEntry,
   onDeleteEntry,
-  onUpdateCoverFocus,
 }: {
   entries: TimelineEntry[];
   onImageClick: (url: string, text?: string) => void;
   onEditEntry: (entry: TimelineEntry) => void;
   onDeleteEntry: (entryId: string) => void;
-  onUpdateCoverFocus: (entryId: string, focus: { x: number; y: number }) => void;
 }) {
   const theme = useTheme();
   const containerRef = React.useRef<HTMLDivElement>(null);
@@ -813,7 +793,6 @@ function TimelineView({
                       onImageClick={onImageClick}
                       onEditEntry={onEditEntry}
                       onDeleteEntry={onDeleteEntry}
-                      onUpdateCoverFocus={onUpdateCoverFocus}
                     />
                   </motion.div>
                 )})}
@@ -832,33 +811,18 @@ function TimelineFolder({
   onImageClick,
   onEditEntry,
   onDeleteEntry,
-  onUpdateCoverFocus,
 }: {
   entry: TimelineEntry;
   index: number;
   onImageClick: (url: string, text?: string) => void;
   onEditEntry: (entry: TimelineEntry) => void;
   onDeleteEntry: (entryId: string) => void;
-  onUpdateCoverFocus: (entryId: string, focus: { x: number; y: number }) => void;
 }) {
   const theme = useTheme();
   const [isExpanded, setIsExpanded] = useState(false);
-  const [isCropOpen, setIsCropOpen] = useState(false);
   const isEven = index % 2 === 0;
-  const coverFocus = entry.coverFocus ?? { x: 50, y: 42 };
-  const [cropDraft, setCropDraft] = useState<{ x: number; y: number }>({
-    x: coverFocus.x,
-    y: coverFocus.y,
-  });
   const coverImage = entry.images.length > 0 ? entry.images[0].imageUrl : 'https://images.unsplash.com/photo-1490750967868-88aa4486c946?auto=format&fit=crop&w=800&q=80';
   const relatedImages = entry.images.slice(1);
-
-  React.useEffect(() => {
-    setCropDraft({
-      x: coverFocus.x,
-      y: coverFocus.y,
-    });
-  }, [entry.id, coverFocus.x, coverFocus.y]);
 
   return (
     <div className="relative w-full mb-3">
@@ -881,17 +845,6 @@ function TimelineFolder({
             {/* Main Card (The "Envelope") */}
             <div className={`relative ${theme.cardBg} p-3.5 shadow-sm border ${theme.cardBorder} transition-all duration-300 w-full hover:shadow-md hover:-translate-y-0.5 z-20`}>
               <div className="absolute top-3 right-3 z-30 flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setIsCropOpen((prev) => !prev);
-                  }}
-                  className={`${theme.cardBg} backdrop-blur-sm border ${theme.cardBorder} p-1.5 rounded-full ${theme.textMuted} hover:opacity-80 transition-colors`}
-                  title="裁切封面"
-                >
-                  <Crop size={13} />
-                </button>
                 <button
                   type="button"
                   onClick={(e) => {
@@ -920,8 +873,7 @@ function TimelineFolder({
                   <SafeImage
                     src={coverImage}
                     alt={entry.title}
-                    className={`w-full h-[158px] md:h-[176px] object-cover grayscale-[20%] group-hover:grayscale-0 transition-all duration-500 ${theme.imageFilter}`}
-                    style={{ objectPosition: `${coverFocus.x}% ${coverFocus.y}%` }}
+                    className={`w-full h-auto max-h-[190px] object-contain bg-stone-100/70 grayscale-[12%] group-hover:grayscale-0 transition-all duration-500 ${theme.imageFilter}`}
                   />
                   {entry.images.length > 1 && (
                     <div className={`absolute bottom-2 right-2 ${theme.cardBg} backdrop-blur-sm ${theme.textMain} text-[10px] px-2 py-1 font-mono tracking-widest border ${theme.cardBorder}`}>
@@ -962,67 +914,6 @@ function TimelineFolder({
                 )}
               </AnimatePresence>
 
-              <AnimatePresence>
-                {isCropOpen && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -8, scale: 0.98 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: -8, scale: 0.98 }}
-                    transition={{ duration: 0.2 }}
-                    className={`absolute top-12 right-3 z-40 w-56 p-3 ${theme.cardBg} border ${theme.cardBorder} shadow-md`}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <div className="overflow-hidden border border-stone-200 rounded-sm mb-3">
-                      <SafeImage
-                        src={coverImage}
-                        alt={entry.title}
-                        className="w-full aspect-[4/3] object-cover"
-                        style={{ objectPosition: `${cropDraft.x}% ${cropDraft.y}%` }}
-                      />
-                    </div>
-                    <label className={`block text-[11px] ${theme.textMuted} mb-1`}>左右裁切焦点</label>
-                    <input
-                      type="range"
-                      min={0}
-                      max={100}
-                      value={cropDraft.x}
-                      onChange={(e) => setCropDraft((prev) => ({ ...prev, x: Number(e.target.value) }))}
-                      className="w-full mb-2"
-                    />
-                    <label className={`block text-[11px] ${theme.textMuted} mb-1`}>上下裁切焦点</label>
-                    <input
-                      type="range"
-                      min={0}
-                      max={100}
-                      value={cropDraft.y}
-                      onChange={(e) => setCropDraft((prev) => ({ ...prev, y: Number(e.target.value) }))}
-                      className="w-full mb-3"
-                    />
-                    <div className="flex justify-end gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setCropDraft({ x: coverFocus.x, y: coverFocus.y });
-                          setIsCropOpen(false);
-                        }}
-                        className={`text-[11px] px-2.5 py-1 border ${theme.cardBorder} ${theme.textMuted}`}
-                      >
-                        取消
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onUpdateCoverFocus(entry.id, cropDraft);
-                          setIsCropOpen(false);
-                        }}
-                        className={`text-[11px] px-2.5 py-1 ${theme.button}`}
-                      >
-                        保存
-                      </button>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
             </div>
 
             <AnimatePresence>
@@ -1075,11 +966,13 @@ function AlbumMasonry({
   onEditEntry: (entry: TimelineEntry) => void;
   onDeleteEntry: (entryId: string) => void;
 }) {
+  const theme = useTheme();
   const cols = useMasonryCols();
   const expandedEntry = React.useMemo(
     () =>
       expandedAlbumId
-        ? entries.find((entry) => entry.id === expandedAlbumId && entry.type !== 'loose_photo') ?? null
+        ? entries.find((entry) => String(entry.id) === String(expandedAlbumId) && entry.type !== 'loose_photo') ??
+          null
         : null,
     [entries, expandedAlbumId],
   );
@@ -1098,8 +991,23 @@ function AlbumMasonry({
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: -20 }}
         transition={{ duration: 0.4 }}
-        className="w-full"
+        className="w-full space-y-4"
       >
+        <div className="max-w-3xl mx-auto">
+          <div className={`${theme.cardBg} border ${theme.cardBorder} rounded-xl px-4 py-3 flex items-center justify-between`}>
+            <button
+              type="button"
+              onClick={() => setExpandedAlbumId(null)}
+              className={`inline-flex items-center gap-1.5 ${theme.textMain} hover:opacity-80 transition-opacity`}
+            >
+              <ArrowLeft size={16} />
+              <span className="text-sm font-medium">返回剪影照片流</span>
+            </button>
+            <span className={`${theme.textMuted} text-xs`}>
+              {expandedEntry.images.length} 张
+            </span>
+          </div>
+        </div>
         <div className="max-w-3xl mx-auto">
           <AlbumStack
             entry={expandedEntry}
