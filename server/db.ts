@@ -60,6 +60,20 @@ db.exec(`
   );
 `);
 
+type TableInfoRow = {
+  name: string;
+};
+
+function ensureColumn(table: string, column: string, definition: string) {
+  const rows = db.prepare(`PRAGMA table_info(${table})`).all() as TableInfoRow[];
+  if (!rows.some((row) => row.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
+
+ensureColumn('timeline_entries', 'cover_x', 'REAL NOT NULL DEFAULT 50');
+ensureColumn('timeline_entries', 'cover_y', 'REAL NOT NULL DEFAULT 42');
+
 const countRow = db.prepare('SELECT COUNT(*) AS count FROM spaces').get() as {count: number};
 
 if (countRow.count === 0) {
