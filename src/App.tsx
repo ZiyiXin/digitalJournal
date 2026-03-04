@@ -760,7 +760,7 @@ function TimelineView({
           style={{ scaleY }}
         />
         
-        <div className="space-y-16">
+        <div className="space-y-10">
           {groupedEntries.map((group) => (
             <div key={group.year} id={`year-${group.year}`} className="relative scroll-mt-32">
               {/* Year Marker */}
@@ -769,14 +769,14 @@ function TimelineView({
                 whileInView={{ opacity: 1, scale: 1, y: 0 }}
                 viewport={{ once: true, margin: "-100px" }}
                 transition={{ duration: 0.6, type: "spring" }}
-                className="flex items-center justify-center mb-10 relative z-10"
+                className="flex items-center justify-center mb-6 relative z-10"
               >
                 <div className={`${theme.cardBg} backdrop-blur-md px-8 py-2.5 rounded-full border ${theme.cardBorder} shadow-[0_3px_14px_rgba(244,114,182,0.1)] ${theme.accent} font-serif font-bold text-xl tracking-[0.18em] flex items-center justify-center`}>
                   {group.year}
                 </div>
               </motion.div>
 
-              <div className="space-y-5">
+              <div className="space-y-3">
                 {group.entries.map((entry, index) => {
                   const globalIndex = entries.findIndex(e => e.id === entry.id);
                   return (
@@ -855,7 +855,7 @@ function TimelineFolder({
   }, [coverRatio]);
 
   return (
-    <div className="relative w-full mb-3">
+    <div className="relative w-full mb-1">
       <div className={`relative flex flex-col md:flex-row items-start ${isEven ? 'md:flex-row-reverse' : ''}`}>
         <motion.div 
           initial={{ scale: 0 }}
@@ -865,7 +865,7 @@ function TimelineFolder({
           className={`absolute left-[9px] md:left-1/2 w-[10px] h-[10px] rounded-full ${theme.bgAccent} md:-translate-x-1/2 mt-5 ring-4 ${theme.dotRing} shadow-sm z-10`}
         ></motion.div>
 
-        <div className={`ml-12 md:ml-0 md:w-1/2 ${isEven ? 'md:pl-12' : 'md:pr-12'} py-1 flex ${isEven ? 'justify-start' : 'justify-end'}`}>
+        <div className={`ml-12 md:ml-0 md:w-1/2 ${isEven ? 'md:pl-12' : 'md:pr-12'} py-0.5 flex ${isEven ? 'justify-start' : 'justify-end'}`}>
           
           {/* Clipping/Note Container */}
           <div
@@ -1017,7 +1017,29 @@ function AlbumMasonry({
     }
   }, [expandedAlbumId, expandedEntry, setExpandedAlbumId]);
 
+  const buildColumns = React.useCallback(
+    (items: TimelineEntry[]) => {
+      const nextColumns: TimelineEntry[][] = Array.from({ length: cols }, () => []);
+      items.forEach((entry, i) => {
+        nextColumns[i % cols].push(entry);
+      });
+      return nextColumns;
+    },
+    [cols],
+  );
+
   if (expandedEntry) {
+    const detailEntries: TimelineEntry[] = expandedEntry.images.map((img, idx) => ({
+      id: `${expandedEntry.id}-detail-${img.id}-${idx}`,
+      title: expandedEntry.title,
+      date: expandedEntry.date,
+      description: expandedEntry.description,
+      images: [img],
+      rotation: ((idx % 5) - 2) * 1.1 + expandedEntry.rotation * 0.2,
+      type: 'loose_photo',
+    }));
+    const detailColumns = buildColumns(detailEntries);
+
     return (
       <motion.div
         key={`album-detail-${expandedEntry.id}`}
@@ -1025,41 +1047,43 @@ function AlbumMasonry({
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: -20 }}
         transition={{ duration: 0.4 }}
-        className="w-full space-y-4"
+        className="w-full"
       >
-        <div className="max-w-3xl mx-auto">
-          <div className={`${theme.cardBg} border ${theme.cardBorder} rounded-xl px-4 py-3 flex items-center justify-between`}>
-            <button
-              type="button"
-              onClick={() => setExpandedAlbumId(null)}
-              className={`inline-flex items-center gap-1.5 ${theme.textMain} hover:opacity-80 transition-opacity`}
-            >
-              <ArrowLeft size={16} />
-              <span className="text-sm font-medium">返回剪影照片流</span>
-            </button>
-            <span className={`${theme.textMuted} text-xs`}>
-              {expandedEntry.images.length} 张
-            </span>
-          </div>
+        <div className="flex items-center justify-between mb-4 px-1">
+          <button
+            type="button"
+            onClick={() => setExpandedAlbumId(null)}
+            className={`inline-flex items-center gap-1.5 ${theme.textMain} hover:opacity-80 transition-opacity`}
+          >
+            <ArrowLeft size={16} />
+            <span className="text-sm font-medium">返回剪影照片流</span>
+          </button>
+          <span className={`${theme.textMuted} text-xs`}>
+            {expandedEntry.title || '未命名相册'} · {expandedEntry.images.length} 张
+          </span>
         </div>
-        <div className="max-w-3xl mx-auto">
-          <AlbumStack
-            entry={expandedEntry}
-            isExpanded
-            onToggle={() => setExpandedAlbumId(null)}
-            onImageClick={onImageClick}
-            onEditEntry={onEditEntry}
-            onDeleteEntry={onDeleteEntry}
-          />
+
+        <div className="flex gap-4 md:gap-6 items-start">
+          {detailColumns.map((col, colIndex) => (
+            <div key={colIndex} className="flex-1 flex flex-col gap-6 md:gap-8">
+              {col.map((entry) => (
+                <LoosePhotoPolaroid
+                  key={entry.id}
+                  entry={entry}
+                  onImageClick={onImageClick}
+                  onEditEntry={onEditEntry}
+                  onDeleteEntry={onDeleteEntry}
+                  hideActions
+                />
+              ))}
+            </div>
+          ))}
         </div>
       </motion.div>
     );
   }
 
-  const columns: TimelineEntry[][] = Array.from({ length: cols }, () => []);
-  entries.forEach((entry, i) => {
-    columns[i % cols].push(entry);
-  });
+  const columns = buildColumns(entries);
 
   return (
     <motion.div 
@@ -1101,7 +1125,8 @@ const LoosePhotoPolaroid: React.FC<{
   onImageClick: (url: string, text?: string) => void;
   onEditEntry: (entry: TimelineEntry) => void;
   onDeleteEntry: (entryId: string) => void;
-}> = ({ entry, onImageClick, onEditEntry, onDeleteEntry }) => {
+  hideActions?: boolean;
+}> = ({ entry, onImageClick, onEditEntry, onDeleteEntry, hideActions = false }) => {
   const theme = useTheme();
   const img = entry.images[0];
   
@@ -1113,28 +1138,30 @@ const LoosePhotoPolaroid: React.FC<{
       className="relative w-full group mb-6"
       style={{ transform: `rotate(${entry.rotation}deg)` }}
     >
-      <div className="absolute top-2 right-2 z-30 flex items-center gap-1">
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onEditEntry(entry);
-          }}
-          className={`${theme.cardBg} border ${theme.cardBorder} p-1 rounded-full ${theme.textMuted} hover:opacity-80 transition-colors`}
-        >
-          <Pencil size={12} />
-        </button>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onDeleteEntry(entry.id);
-          }}
-          className={`${theme.cardBg} border ${theme.cardBorder} p-1 rounded-full ${theme.textMuted} hover:text-red-500 transition-colors`}
-        >
-          <Trash2 size={12} />
-        </button>
-      </div>
+      {!hideActions && (
+        <div className="absolute top-2 right-2 z-30 flex items-center gap-1">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onEditEntry(entry);
+            }}
+            className={`${theme.cardBg} border ${theme.cardBorder} p-1 rounded-full ${theme.textMuted} hover:opacity-80 transition-colors`}
+          >
+            <Pencil size={12} />
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDeleteEntry(entry.id);
+            }}
+            className={`${theme.cardBg} border ${theme.cardBorder} p-1 rounded-full ${theme.textMuted} hover:text-red-500 transition-colors`}
+          >
+            <Trash2 size={12} />
+          </button>
+        </div>
+      )}
       <div 
         className={`relative z-20 shadow-sm rounded-sm overflow-hidden transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-md cursor-zoom-in border ${theme.cardBorder}`}
         onClick={() => onImageClick(img.imageUrl, img.text)}
