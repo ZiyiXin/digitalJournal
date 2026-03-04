@@ -1073,7 +1073,60 @@ function AlbumMasonry({
 }) {
   const theme = useTheme();
   const cols = useMasonryCols();
-  
+  const expandedEntry = React.useMemo(
+    () =>
+      expandedAlbumId
+        ? entries.find((entry) => String(entry.id) === String(expandedAlbumId) && entry.type !== 'loose_photo') ??
+          null
+        : null,
+    [entries, expandedAlbumId],
+  );
+
+  React.useEffect(() => {
+    if (expandedAlbumId && !expandedEntry) {
+      setExpandedAlbumId(null);
+    }
+  }, [expandedAlbumId, expandedEntry, setExpandedAlbumId]);
+
+  if (expandedEntry) {
+    return (
+      <motion.div
+        key={`album-detail-${expandedEntry.id}`}
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -20 }}
+        transition={{ duration: 0.4 }}
+        className="w-full space-y-4"
+      >
+        <div className="max-w-3xl mx-auto">
+          <div className={`${theme.cardBg} border ${theme.cardBorder} rounded-xl px-4 py-3 flex items-center justify-between`}>
+            <button
+              type="button"
+              onClick={() => setExpandedAlbumId(null)}
+              className={`inline-flex items-center gap-1.5 ${theme.textMain} hover:opacity-80 transition-opacity`}
+            >
+              <ArrowLeft size={16} />
+              <span className="text-sm font-medium">返回剪影照片流</span>
+            </button>
+            <span className={`${theme.textMuted} text-xs`}>
+              {expandedEntry.images.length} 张
+            </span>
+          </div>
+        </div>
+        <div className="max-w-3xl mx-auto">
+          <AlbumStack
+            entry={expandedEntry}
+            isExpanded
+            onToggle={() => setExpandedAlbumId(null)}
+            onImageClick={onImageClick}
+            onEditEntry={onEditEntry}
+            onDeleteEntry={onDeleteEntry}
+          />
+        </div>
+      </motion.div>
+    );
+  }
+
   const columns: TimelineEntry[][] = Array.from({ length: cols }, () => []);
   entries.forEach((entry, i) => {
     columns[i % cols].push(entry);
@@ -1100,8 +1153,8 @@ function AlbumMasonry({
               <AlbumStack 
                 key={entry.id} 
                 entry={entry} 
-                isExpanded={expandedAlbumId === entry.id}
-                onToggle={() => setExpandedAlbumId(expandedAlbumId === entry.id ? null : entry.id)}
+                isExpanded={false}
+                onToggle={() => setExpandedAlbumId(entry.id)}
                 onImageClick={onImageClick}
                 onEditEntry={onEditEntry}
                 onDeleteEntry={onDeleteEntry}
