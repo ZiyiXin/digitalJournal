@@ -1,8 +1,8 @@
 import React, { useCallback, useRef, useState } from 'react';
-import { Plus, X, Image as ImageIcon, Calendar, ChevronDown, MessageSquare, Clock, Camera, Star, MapPin, Heart, Sparkles, ImagePlus, ChevronRight, ChevronLeft, ChevronUp, ArrowLeft, Palette, Pencil, Trash2 } from 'lucide-react';
+import { Plus, X, Image as ImageIcon, Calendar, ChevronDown, MessageSquare, Clock, Camera, Star, MapPin, Heart, Sparkles, ImagePlus, ChevronRight, ChevronLeft, ChevronUp, ArrowLeft, Palette, Pencil, Trash2, Move } from 'lucide-react';
 import { motion, AnimatePresence, useScroll, useSpring } from 'motion/react';
 import {createSpace, deleteSpace, fetchSpaces, saveSpaceSnapshot, updateSpaceMeta, uploadImage} from './lib/api';
-import type {Space, TimelineEntry, TreeholeEntry} from './types';
+import type {AvatarFocus, Space, TimelineEntry, TreeholeEntry} from './types';
 
 // --- Themes ---
 export type ThemeName = 'default' | 'anime' | 'scifi' | 'retro' | 'fantasy';
@@ -121,6 +121,15 @@ export const useTheme = () => React.useContext(ThemeContext);
 const treeholeColors = ['bg-[#fff0f3]', 'bg-[#fdf4ff]', 'bg-[#f0fdf4]', 'bg-[#fffbeb]', 'bg-[#f0f9ff]'];
 const MAX_ENTRY_UPLOAD_IMAGES = 10;
 const MAX_IMAGES_PER_TIMELINE_OR_ALBUM = 30;
+const DEFAULT_AVATAR_FOCUS: AvatarFocus = { x: 50, y: 50, scale: 1 };
+const AVATAR_SCALE_MIN = 1;
+const AVATAR_SCALE_MAX = 3;
+const clampValue = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+const normalizeAvatarFocus = (focus?: Partial<AvatarFocus>): AvatarFocus => ({
+  x: clampValue(Number.isFinite(focus?.x ?? NaN) ? (focus?.x as number) : DEFAULT_AVATAR_FOCUS.x, 0, 100),
+  y: clampValue(Number.isFinite(focus?.y ?? NaN) ? (focus?.y as number) : DEFAULT_AVATAR_FOCUS.y, 0, 100),
+  scale: clampValue(Number.isFinite(focus?.scale ?? NaN) ? (focus?.scale as number) : DEFAULT_AVATAR_FOCUS.scale, AVATAR_SCALE_MIN, AVATAR_SCALE_MAX),
+});
 
 // --- Safe Image Component ---
 function SafeImage({
@@ -198,13 +207,37 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
   // Customizable Hero and Avatar
   const [heroImage, setHeroImage] = useState(space.heroImage);
   const [avatarImage, setAvatarImage] = useState(space.avatarImage);
+  const [avatarFocus, setAvatarFocus] = useState<AvatarFocus>(normalizeAvatarFocus(space.avatarFocus));
+  const [isAvatarAdjustOpen, setIsAvatarAdjustOpen] = useState(false);
+  const [avatarFocusDraft, setAvatarFocusDraft] = useState<AvatarFocus>(normalizeAvatarFocus(space.avatarFocus));
+  const avatarDragRef = useRef<{
+    source: 'mouse' | 'touch';
+    touchId?: number;
+    startX: number;
+    startY: number;
+    startFocus: AvatarFocus;
+  } | null>(null);
+  const avatarPreviewRef = useRef<HTMLDivElement | null>(null);
+  const [spaceDescription, setSpaceDescription] = useState(space.description);
+  const [isEditingDescription, setIsEditingDescription] = useState(false);
+  const [descriptionDraft, setDescriptionDraft] = useState(space.description);
 
   React.useEffect(() => {
     setTimelineEntries(space.entries);
     setTreeholeEntries(space.treeholeEntries);
     setHeroImage(space.heroImage);
     setAvatarImage(space.avatarImage);
-  }, [space.id, space.entries, space.treeholeEntries, space.heroImage, space.avatarImage]);
+    const incomingAvatarFocus = normalizeAvatarFocus(space.avatarFocus);
+    setAvatarFocus(incomingAvatarFocus);
+    setAvatarFocusDraft(incomingAvatarFocus);
+    setSpaceDescription(space.description);
+    setDescriptionDraft(space.description);
+    setIsEditingDescription(false);
+  }, [space.id]);
+
+  React.useEffect(() => {
+    setIsAvatarAdjustOpen(false);
+  }, [space.id]);
 
   React.useEffect(() => {
     if (!hasMountedRef.current) {
@@ -215,13 +248,14 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
     onUpdateSpace({
       id: space.id,
       name: space.name,
-      description: space.description,
+      description: spaceDescription,
       entries: timelineEntries,
       treeholeEntries,
       heroImage,
       avatarImage,
+      avatarFocus,
     });
-  }, [timelineEntries, treeholeEntries, heroImage, avatarImage, onUpdateSpace, space.id, space.name, space.description]);
+  }, [timelineEntries, treeholeEntries, heroImage, avatarImage, avatarFocus, onUpdateSpace, space.id, space.name, spaceDescription]);
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, setter: (url: string) => void) => {
     const file = e.target.files?.[0];
@@ -237,6 +271,99 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
         setIsUploadingImage(false);
       }
     }
+  };
+
+  const openAvatarAdjuster = () => {
+    setAvatarFocusDraft(avatarFocus);
+    setIsAvatarAdjustOpen(true);
+  };
+
+  const updateAvatarDrag = (clientX: number, clientY: number) => {
+    const dragState = avatarDragRef.current;
+    const preview = avatarPreviewRef.current;
+    if (!dragState || !preview) return;
+
+    const rect = preview.getBoundingClientRect();
+    const deltaX = clientX - dragState.startX;
+    const deltaY = clientY - dragState.startY;
+    const pxToPercent = 100 / Math.max(rect.width, 1);
+    const scaleFactor = Math.max(dragState.startFocus.scale, AVATAR_SCALE_MIN);
+
+    setAvatarFocusDraft({
+      ...dragState.startFocus,
+      x: clampValue(dragState.startFocus.x - (deltaX * pxToPercent) / scaleFactor, 0, 100),
+      y: clampValue(dragState.startFocus.y - (deltaY * pxToPercent) / scaleFactor, 0, 100),
+    });
+  };
+
+  const handleAvatarMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    avatarDragRef.current = {
+      source: 'mouse',
+      startX: e.clientX,
+      startY: e.clientY,
+      startFocus: avatarFocusDraft,
+    };
+  };
+
+  const handleAvatarTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.touches.length === 0) return;
+    const touch = e.touches[0];
+    avatarDragRef.current = {
+      source: 'touch',
+      touchId: touch.identifier,
+      startX: touch.clientX,
+      startY: touch.clientY,
+      startFocus: avatarFocusDraft,
+    };
+  };
+
+  const handleAvatarDragStop = () => {
+    avatarDragRef.current = null;
+  };
+
+  React.useEffect(() => {
+    const handleMouseMove = (event: MouseEvent) => {
+      if (!avatarDragRef.current || avatarDragRef.current.source !== 'mouse') return;
+      updateAvatarDrag(event.clientX, event.clientY);
+    };
+
+    const handleMouseUp = () => {
+      if (!avatarDragRef.current || avatarDragRef.current.source !== 'mouse') return;
+      handleAvatarDragStop();
+    };
+
+    const handleTouchMove = (event: TouchEvent) => {
+      if (!avatarDragRef.current || avatarDragRef.current.source !== 'touch') return;
+      const currentTouch = Array.from(event.touches).find((touch) => touch.identifier === avatarDragRef.current?.touchId);
+      if (!currentTouch) return;
+      event.preventDefault();
+      updateAvatarDrag(currentTouch.clientX, currentTouch.clientY);
+    };
+
+    const handleTouchEnd = () => {
+      if (!avatarDragRef.current || avatarDragRef.current.source !== 'touch') return;
+      handleAvatarDragStop();
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    window.addEventListener('touchmove', handleTouchMove, { passive: false });
+    window.addEventListener('touchend', handleTouchEnd);
+    window.addEventListener('touchcancel', handleTouchEnd);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchend', handleTouchEnd);
+      window.removeEventListener('touchcancel', handleTouchEnd);
+    };
+  }, []);
+
+  const handleAvatarScaleChange = (value: string) => {
+    const nextScale = clampValue(Number(value), AVATAR_SCALE_MIN, AVATAR_SCALE_MAX);
+    setAvatarFocusDraft((prev) => ({ ...prev, scale: nextScale }));
   };
 
   const handleUploadImage = async (file: File): Promise<string> => uploadImage(file);
@@ -451,6 +578,17 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
     );
   };
 
+  const handleSaveDescription = () => {
+    const nextDescription = descriptionDraft.replace(/\r\n/g, '\n').trim();
+    if (!nextDescription) {
+      window.alert('简介不能为空');
+      return;
+    }
+    setSpaceDescription(nextDescription);
+    setDescriptionDraft(nextDescription);
+    setIsEditingDescription(false);
+  };
+
   return (
     <div className={`min-h-screen transition-colors duration-500 selection:bg-pink-100 selection:text-pink-600 ${theme.globalBg} ${theme.textMain} ${theme.fontMain}`}>
       {/* Back Button */}
@@ -501,13 +639,45 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
               initial={{ scale: 0.9, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }} transition={{ duration: 0.8, type: "spring", bounce: 0.4 }}
               className={`w-28 h-28 md:w-32 md:h-32 rounded-full overflow-hidden border-[4px] border-white shadow-[0_8px_24px_rgba(244,114,182,0.25)] mb-5 relative z-10 ${theme.cardBg}`}
             >
-              <img src={avatarImage} alt="Avatar" className={`w-full h-full object-cover ${theme.imageFilter}`} />
-              <label className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity duration-300">
-                <Camera className="text-white mb-1" size={24} />
+              <img
+                src={avatarImage}
+                alt="Avatar"
+                className={`w-full h-full object-cover ${theme.imageFilter}`}
+                style={{
+                  objectPosition: `${avatarFocus.x}% ${avatarFocus.y}%`,
+                  transformOrigin: `${avatarFocus.x}% ${avatarFocus.y}%`,
+                  transform: `scale(${avatarFocus.scale})`,
+                }}
+              />
+              <label className="absolute inset-0 bg-black/45 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity duration-300">
+                <Camera className="text-white mb-1" size={20} />
                 <span className="text-white text-xs font-medium">更换头像</span>
-                <input type="file" className="hidden" accept="image/*" disabled={isUploadingImage} onChange={(e) => void handleImageUpload(e, setAvatarImage)} />
+                <input
+                  type="file"
+                  className="hidden"
+                  accept="image/*"
+                  disabled={isUploadingImage}
+                  onChange={(e) =>
+                    void handleImageUpload(e, (url) => {
+                      setAvatarImage(url);
+                      setAvatarFocus(DEFAULT_AVATAR_FOCUS);
+                      setAvatarFocusDraft(DEFAULT_AVATAR_FOCUS);
+                    })
+                  }
+                />
               </label>
             </motion.div>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                openAvatarAdjuster();
+              }}
+              aria-label="调整头像位置"
+              className={`absolute -right-11 md:-right-12 top-1/2 -translate-y-1/2 z-30 w-8 h-8 md:w-9 md:h-9 flex items-center justify-center rounded-full ${theme.cardBg} border ${theme.cardBorder} ${theme.accent} shadow-sm invisible opacity-0 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100 hover:opacity-80 transition-all duration-200`}
+            >
+              <Move size={14} />
+            </button>
           </div>
 
           <motion.h1 
@@ -522,12 +692,58 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
           >
             {/* Optional English name or subtitle could go here */}
           </motion.p>
-          <motion.p 
+          <motion.div
             initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: 0.8, delay: 0.6, ease: "easeOut" }}
-            className={`${theme.textMuted} leading-relaxed max-w-xl mx-auto font-medium text-base md:text-lg`}
+            className="group relative w-full max-w-xl mx-auto"
           >
-            {space.description.split('\n').map((line, i) => <React.Fragment key={i}>{line}<br/></React.Fragment>)}
-          </motion.p>
+            {!isEditingDescription && (
+              <div className="mb-1 flex h-9 justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDescriptionDraft(spaceDescription);
+                    setIsEditingDescription(true);
+                  }}
+                  className={`w-8 h-8 md:w-9 md:h-9 flex items-center justify-center rounded-full ${theme.cardBg} border ${theme.cardBorder} ${theme.accent} shadow-sm opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto hover:opacity-80 transition-all duration-200`}
+                >
+                  <Pencil size={14} />
+                </button>
+              </div>
+            )}
+            {isEditingDescription ? (
+              <div className={`mt-1 rounded-2xl border ${theme.cardBorder} ${theme.cardBg} p-4 shadow-sm`}>
+                <textarea
+                  value={descriptionDraft}
+                  onChange={(e) => setDescriptionDraft(e.target.value)}
+                  rows={3}
+                  className={`w-full resize-none bg-transparent focus:outline-none ${theme.textMain} leading-relaxed text-base md:text-lg`}
+                />
+                <div className="mt-3 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDescriptionDraft(spaceDescription);
+                      setIsEditingDescription(false);
+                    }}
+                    className={`px-3 py-1.5 text-sm rounded-full border ${theme.cardBorder} ${theme.textMuted} hover:opacity-80 transition-colors`}
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveDescription}
+                    className={`px-3 py-1.5 text-sm rounded-full text-white ${theme.bgAccent} hover:opacity-90 transition-opacity`}
+                  >
+                    保存
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <p className={`${theme.textMuted} leading-relaxed font-medium text-base md:text-lg whitespace-pre-line px-2 md:px-3`}>
+                {spaceDescription}
+              </p>
+            )}
+          </motion.div>
           
           <motion.div
             initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: 0.8, delay: 0.8, ease: "easeOut" }}
@@ -612,14 +828,14 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
                     <button
                       type="button"
                       onClick={() => handleEditTreeholeEntry(msg)}
-                      className="w-8 h-8 flex items-center justify-center rounded-full bg-white/70 text-stone-500 hover:text-stone-700 transition-colors"
+                      className={`w-8 h-8 flex items-center justify-center rounded-full bg-white/70 ${theme.accent} hover:opacity-80 transition-colors`}
                     >
                       <Pencil size={14} />
                     </button>
                     <button
                       type="button"
                       onClick={() => handleDeleteTreeholeEntry(msg.id)}
-                      className="w-8 h-8 flex items-center justify-center rounded-full bg-white/70 text-stone-500 hover:text-red-500 transition-colors"
+                      className={`w-8 h-8 flex items-center justify-center rounded-full bg-white/70 ${theme.accent} hover:opacity-80 transition-colors`}
                     >
                       <Trash2 size={14} />
                     </button>
@@ -655,6 +871,88 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
             existingEvents={timelineEntries}
             onUploadImage={handleUploadImage}
           />
+        )}
+      </AnimatePresence>
+
+      {/* Avatar Adjust Modal */}
+      <AnimatePresence>
+        {isAvatarAdjustOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-stone-900/45 backdrop-blur-md"
+            onClick={() => setIsAvatarAdjustOpen(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 12 }}
+              className={`w-full max-w-sm rounded-3xl border ${theme.cardBorder} ${theme.cardBg} p-6 shadow-2xl`}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className={`${theme.textMain} ${theme.fontTitle} text-xl font-bold mb-4`}>调整头像位置</h3>
+              <div
+                ref={avatarPreviewRef}
+                className={`mx-auto w-56 h-56 rounded-full overflow-hidden border-4 border-white shadow-lg cursor-grab active:cursor-grabbing touch-none ${theme.cardBg}`}
+                onMouseDown={handleAvatarMouseDown}
+                onTouchStart={handleAvatarTouchStart}
+              >
+                <img
+                  src={avatarImage}
+                  alt="Avatar Preview"
+                  className={`w-full h-full object-cover select-none pointer-events-none ${theme.imageFilter}`}
+                  draggable={false}
+                  style={{
+                    objectPosition: `${avatarFocusDraft.x}% ${avatarFocusDraft.y}%`,
+                    transformOrigin: `${avatarFocusDraft.x}% ${avatarFocusDraft.y}%`,
+                    transform: `scale(${avatarFocusDraft.scale})`,
+                  }}
+                />
+              </div>
+              <p className={`${theme.textMuted} text-sm text-center mt-3`}>拖拽头像调整位置，滑杆调整缩放</p>
+
+              <div className="mt-5">
+                <div className="flex items-center justify-between text-xs mb-1">
+                  <span className={theme.textMuted}>缩放</span>
+                  <span className={theme.accent}>{avatarFocusDraft.scale.toFixed(2)}x</span>
+                </div>
+                <input
+                  type="range"
+                  min={AVATAR_SCALE_MIN}
+                  max={AVATAR_SCALE_MAX}
+                  step={0.01}
+                  value={avatarFocusDraft.scale}
+                  onInput={(e) => handleAvatarScaleChange((e.target as HTMLInputElement).value)}
+                  onChange={(e) => handleAvatarScaleChange(e.target.value)}
+                  className="w-full accent-pink-400"
+                />
+              </div>
+
+              <div className="mt-6 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAvatarFocusDraft(avatarFocus);
+                    setIsAvatarAdjustOpen(false);
+                  }}
+                  className={`px-3 py-1.5 text-sm rounded-full border ${theme.cardBorder} ${theme.textMuted} hover:opacity-80 transition-colors`}
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAvatarFocus(normalizeAvatarFocus(avatarFocusDraft));
+                    setIsAvatarAdjustOpen(false);
+                  }}
+                  className={`px-3 py-1.5 text-sm rounded-full text-white ${theme.bgAccent} hover:opacity-90 transition-opacity`}
+                >
+                  保存
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
         )}
       </AnimatePresence>
 
@@ -929,14 +1227,14 @@ function TimelineFolder({
             
             {/* Main Card (The "Envelope") */}
             <div className={`relative ${theme.cardBg} p-3.5 shadow-sm border ${theme.cardBorder} transition-all duration-300 w-full hover:shadow-md hover:-translate-y-0.5 z-20`}>
-              <div className="absolute top-3 right-3 z-30 flex items-center gap-1">
+              <div className="absolute top-3 right-3 z-30 flex items-center gap-1 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto transition-opacity">
                 <button
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
                     onEditEntry(entry);
                   }}
-                  className={`${theme.cardBg} backdrop-blur-sm border ${theme.cardBorder} p-1.5 rounded-full ${theme.textMuted} hover:opacity-80 transition-colors`}
+                  className={`${theme.cardBg} backdrop-blur-sm border ${theme.cardBorder} p-1.5 rounded-full ${theme.accent} hover:opacity-80 transition-colors`}
                 >
                   <Pencil size={14} />
                 </button>
@@ -946,7 +1244,7 @@ function TimelineFolder({
                     e.stopPropagation();
                     onDeleteEntry(entry.id);
                   }}
-                  className={`${theme.cardBg} backdrop-blur-sm border ${theme.cardBorder} p-1.5 rounded-full ${theme.textMuted} hover:text-red-500 transition-colors`}
+                  className={`${theme.cardBg} backdrop-blur-sm border ${theme.cardBorder} p-1.5 rounded-full ${theme.accent} hover:opacity-80 transition-colors`}
                 >
                   <Trash2 size={14} />
                 </button>
@@ -1198,7 +1496,7 @@ const LoosePhotoPolaroid: React.FC<{
               e.stopPropagation();
               onEditEntry(entry);
             }}
-            className={`${theme.cardBg} border ${theme.cardBorder} p-1 rounded-full ${theme.textMuted} hover:opacity-80 transition-colors`}
+            className={`${theme.cardBg} border ${theme.cardBorder} p-1 rounded-full ${theme.accent} hover:opacity-80 transition-colors`}
           >
             <Pencil size={12} />
           </button>
@@ -1208,7 +1506,7 @@ const LoosePhotoPolaroid: React.FC<{
               e.stopPropagation();
               onDeleteEntry(entry.id);
             }}
-            className={`${theme.cardBg} border ${theme.cardBorder} p-1 rounded-full ${theme.textMuted} hover:text-red-500 transition-colors`}
+            className={`${theme.cardBg} border ${theme.cardBorder} p-1 rounded-full ${theme.accent} hover:opacity-80 transition-colors`}
           >
             <Trash2 size={12} />
           </button>
@@ -1263,7 +1561,7 @@ const AlbumStack: React.FC<{
                   e.stopPropagation();
                   onEditEntry(entry);
                 }}
-                className={`${theme.cardBg} border ${theme.cardBorder} p-1.5 rounded-full ${theme.textMuted} hover:opacity-80 transition-colors`}
+                className={`${theme.cardBg} border ${theme.cardBorder} p-1.5 rounded-full ${theme.accent} hover:opacity-80 transition-colors`}
               >
                 <Pencil size={12} />
               </button>
@@ -1273,7 +1571,7 @@ const AlbumStack: React.FC<{
                   e.stopPropagation();
                   onDeleteEntry(entry.id);
                 }}
-                className={`${theme.cardBg} border ${theme.cardBorder} p-1.5 rounded-full ${theme.textMuted} hover:text-red-500 transition-colors`}
+                className={`${theme.cardBg} border ${theme.cardBorder} p-1.5 rounded-full ${theme.accent} hover:opacity-80 transition-colors`}
               >
                 <Trash2 size={12} />
               </button>
@@ -1330,7 +1628,7 @@ const AlbumStack: React.FC<{
                     e.stopPropagation();
                     onEditEntry(entry);
                   }}
-                  className={`${theme.textMuted} hover:opacity-80 transition-colors ${theme.cardBg} backdrop-blur-sm p-1.5 rounded-full shadow-sm border ${theme.cardBorder}`}
+                  className={`${theme.accent} hover:opacity-80 transition-colors ${theme.cardBg} backdrop-blur-sm p-1.5 rounded-full shadow-sm border ${theme.cardBorder}`}
                 >
                   <Pencil size={14} />
                 </button>
@@ -1340,7 +1638,7 @@ const AlbumStack: React.FC<{
                     e.stopPropagation();
                     onDeleteEntry(entry.id);
                   }}
-                  className={`${theme.textMuted} hover:text-red-500 transition-colors ${theme.cardBg} backdrop-blur-sm p-1.5 rounded-full shadow-sm border ${theme.cardBorder}`}
+                  className={`${theme.accent} hover:opacity-80 transition-colors ${theme.cardBg} backdrop-blur-sm p-1.5 rounded-full shadow-sm border ${theme.cardBorder}`}
                 >
                   <Trash2 size={14} />
                 </button>
@@ -1706,6 +2004,7 @@ function Portal({
   onRenameSpace: (id: string, name: string) => Promise<void>;
   onDeleteSpace: (id: string) => Promise<void>;
 }) {
+  const theme = useTheme();
   const [isCreating, setIsCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const [newAvatar, setNewAvatar] = useState('');
@@ -1810,7 +2109,7 @@ function Portal({
                       e.stopPropagation();
                       void handleRenameSpace(space);
                     }}
-                    className="w-7 h-7 flex items-center justify-center rounded-full bg-white/85 text-stone-500 hover:text-stone-700 shadow-sm"
+                    className={`w-7 h-7 flex items-center justify-center rounded-full bg-white/85 ${theme.accent} hover:opacity-80 shadow-sm transition-colors`}
                   >
                     <Pencil size={13} />
                   </button>
@@ -1820,7 +2119,7 @@ function Portal({
                       e.stopPropagation();
                       void handleDeleteSpace(space);
                     }}
-                    className="w-7 h-7 flex items-center justify-center rounded-full bg-white/85 text-stone-500 hover:text-red-500 shadow-sm"
+                    className={`w-7 h-7 flex items-center justify-center rounded-full bg-white/85 ${theme.accent} hover:opacity-80 shadow-sm transition-colors`}
                   >
                     <Trash2 size={13} />
                   </button>
@@ -1851,7 +2150,16 @@ function Portal({
 
                     {/* Tipped-in Photo */}
                     <div className="relative w-full flex-1 bg-stone-200 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.05)] overflow-hidden">
-                      <img src={space.avatarImage} alt={space.name} className="w-full h-full object-cover filter contrast-[1.02] transition-transform duration-700 group-hover:scale-105" />
+                      <img
+                        src={space.avatarImage}
+                        alt={space.name}
+                        className="w-full h-full object-cover filter contrast-[1.02] transition-transform duration-700"
+                        style={{
+                          objectPosition: `${space.avatarFocus.x}% ${space.avatarFocus.y}%`,
+                          transformOrigin: `${space.avatarFocus.x}% ${space.avatarFocus.y}%`,
+                          transform: `scale(${space.avatarFocus.scale})`,
+                        }}
+                      />
                     </div>
                     
                     {/* Title Area */}

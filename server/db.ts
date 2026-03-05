@@ -19,6 +19,9 @@ db.exec(`
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     avatar_image TEXT NOT NULL,
+    avatar_x REAL NOT NULL DEFAULT 50,
+    avatar_y REAL NOT NULL DEFAULT 50,
+    avatar_scale REAL NOT NULL DEFAULT 1,
     hero_image TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -73,6 +76,9 @@ function ensureColumn(table: string, column: string, definition: string) {
 
 ensureColumn('timeline_entries', 'cover_x', 'REAL NOT NULL DEFAULT 50');
 ensureColumn('timeline_entries', 'cover_y', 'REAL NOT NULL DEFAULT 42');
+ensureColumn('spaces', 'avatar_x', 'REAL NOT NULL DEFAULT 50');
+ensureColumn('spaces', 'avatar_y', 'REAL NOT NULL DEFAULT 50');
+ensureColumn('spaces', 'avatar_scale', 'REAL NOT NULL DEFAULT 1');
 
 const countRow = db.prepare('SELECT COUNT(*) AS count FROM spaces').get() as {count: number};
 

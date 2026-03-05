@@ -13,6 +13,9 @@ type SpaceRow = {
   id: string;
   name: string;
   avatar_image: string;
+  avatar_x: number;
+  avatar_y: number;
+  avatar_scale: number;
   hero_image: string;
   description: string;
 };
@@ -39,11 +42,22 @@ type TreeholeRow = {
   rotation: number;
 };
 
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+
+function normalizeAvatarFocus(x: number, y: number, scale: number) {
+  return {
+    x: clamp(Number.isFinite(x) ? x : 50, 0, 100),
+    y: clamp(Number.isFinite(y) ? y : 50, 0, 100),
+    scale: clamp(Number.isFinite(scale) ? scale : 1, 1, 3),
+  };
+}
+
 function mapSpace(row: SpaceRow, entries: TimelineEntry[], treeholeEntries: TreeholeEntry[]): Space {
   return {
     id: row.id,
     name: row.name,
     avatarImage: row.avatar_image,
+    avatarFocus: normalizeAvatarFocus(row.avatar_x, row.avatar_y, row.avatar_scale),
     heroImage: row.hero_image,
     description: row.description,
     entries,
@@ -136,7 +150,7 @@ export function listSpaces(): Space[] {
   const rows = db
     .prepare(
       `
-      SELECT id, name, avatar_image, hero_image, description
+      SELECT id, name, avatar_image, avatar_x, avatar_y, avatar_scale, hero_image, description
       FROM spaces
       ORDER BY created_at ASC
     `,
@@ -150,7 +164,7 @@ export function getSpaceById(spaceId: string): Space | null {
   const row = db
     .prepare(
       `
-      SELECT id, name, avatar_image, hero_image, description
+      SELECT id, name, avatar_image, avatar_x, avatar_y, avatar_scale, hero_image, description
       FROM spaces
       WHERE id = ?
     `,
@@ -166,13 +180,16 @@ export function createSpace(input: CreateSpaceInput): Space {
 
   db.prepare(
     `
-      INSERT INTO spaces (id, name, avatar_image, hero_image, description)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO spaces (id, name, avatar_image, avatar_x, avatar_y, avatar_scale, hero_image, description)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `,
   ).run(
     id,
     input.name.trim(),
     input.avatarImage,
+    input.avatarFocus?.x ?? 50,
+    input.avatarFocus?.y ?? 50,
+    input.avatarFocus?.scale ?? 1,
     input.heroImage ?? 'https://images.unsplash.com/photo-1518599904199-0ca897819ddb?auto=format&fit=crop&w=2000&q=80',
     input.description ?? '记录每一个闪光瞬间。',
   );
@@ -182,7 +199,7 @@ export function createSpace(input: CreateSpaceInput): Space {
 
 export function updateSpaceMeta(
   spaceId: string,
-  input: Partial<Pick<Space, 'name' | 'avatarImage' | 'heroImage' | 'description'>>,
+  input: Partial<Pick<Space, 'name' | 'avatarImage' | 'avatarFocus' | 'heroImage' | 'description'>>,
 ): Space | null {
   const current = getSpaceById(spaceId);
   if (!current) return null;
@@ -193,6 +210,9 @@ export function updateSpaceMeta(
       SET
         name = ?,
         avatar_image = ?,
+        avatar_x = ?,
+        avatar_y = ?,
+        avatar_scale = ?,
         hero_image = ?,
         description = ?,
         updated_at = datetime('now')
@@ -201,6 +221,9 @@ export function updateSpaceMeta(
   ).run(
     input.name ?? current.name,
     input.avatarImage ?? current.avatarImage,
+    input.avatarFocus?.x ?? current.avatarFocus.x,
+    input.avatarFocus?.y ?? current.avatarFocus.y,
+    input.avatarFocus?.scale ?? current.avatarFocus.scale,
     input.heroImage ?? current.heroImage,
     input.description ?? current.description,
     spaceId,
@@ -212,16 +235,28 @@ export function updateSpaceMeta(
 const saveSpaceSnapshotTx = db.transaction((space: Space) => {
   db.prepare(
     `
-      INSERT INTO spaces (id, name, avatar_image, hero_image, description)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO spaces (id, name, avatar_image, avatar_x, avatar_y, avatar_scale, hero_image, description)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         name = excluded.name,
         avatar_image = excluded.avatar_image,
+        avatar_x = excluded.avatar_x,
+        avatar_y = excluded.avatar_y,
+        avatar_scale = excluded.avatar_scale,
         hero_image = excluded.hero_image,
         description = excluded.description,
         updated_at = datetime('now')
     `,
-  ).run(space.id, space.name, space.avatarImage, space.heroImage, space.description);
+  ).run(
+    space.id,
+    space.name,
+    space.avatarImage,
+    space.avatarFocus?.x ?? 50,
+    space.avatarFocus?.y ?? 50,
+    space.avatarFocus?.scale ?? 1,
+    space.heroImage,
+    space.description,
+  );
 
   db.prepare('DELETE FROM timeline_images WHERE entry_id IN (SELECT id FROM timeline_entries WHERE space_id = ?)').run(space.id);
   db.prepare('DELETE FROM timeline_entries WHERE space_id = ?').run(space.id);

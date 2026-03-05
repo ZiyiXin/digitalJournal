@@ -11,6 +11,12 @@ export interface CoverFocus {
   y: number;
 }
 
+export interface AvatarFocus {
+  x: number;
+  y: number;
+  scale: number;
+}
+
 export interface TimelineEntry {
   id: string;
   title: string;
@@ -34,6 +40,7 @@ export interface Space {
   id: string;
   name: string;
   avatarImage: string;
+  avatarFocus: AvatarFocus;
   heroImage: string;
   description: string;
   entries: TimelineEntry[];
@@ -43,6 +50,7 @@ export interface Space {
 export interface CreateSpaceInput {
   name: string;
   avatarImage: string;
+  avatarFocus?: AvatarFocus;
   heroImage?: string;
   description?: string;
 }
