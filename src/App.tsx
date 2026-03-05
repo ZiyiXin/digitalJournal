@@ -119,6 +119,8 @@ export const ThemeContext = React.createContext(THEMES.default);
 export const useTheme = () => React.useContext(ThemeContext);
 
 const treeholeColors = ['bg-[#fff0f3]', 'bg-[#fdf4ff]', 'bg-[#f0fdf4]', 'bg-[#fffbeb]', 'bg-[#f0f9ff]'];
+const MAX_ENTRY_UPLOAD_IMAGES = 10;
+const MAX_IMAGES_PER_TIMELINE_OR_ALBUM = 30;
 
 // --- Safe Image Component ---
 function SafeImage({
@@ -244,16 +246,42 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
 
   const handleAddEntry = (type: 'timeline' | 'album' | 'treehole', data: any) => {
     const newId = Date.now().toString();
+    const imageUrls = Array.isArray(data.imageUrls)
+      ? data.imageUrls
+          .filter((url: unknown): url is string => typeof url === 'string' && url.trim().length > 0)
+          .slice(0, MAX_ENTRY_UPLOAD_IMAGES)
+      : typeof data.imageUrl === 'string' && data.imageUrl.trim().length > 0
+        ? [data.imageUrl]
+        : [];
+    const createImages = (baseId: string, text?: string) =>
+      imageUrls.map((url, idx) => ({ id: `${baseId}-${idx}`, imageUrl: url, text }));
+    const appendImagesWithLimit = (
+      existingImages: TimelineEntry['images'],
+      incomingImages: TimelineEntry['images'],
+      scopeLabel: string,
+    ) => {
+      const remaining = MAX_IMAGES_PER_TIMELINE_OR_ALBUM - existingImages.length;
+      if (remaining <= 0) {
+        window.alert(`${scopeLabel}最多支持 ${MAX_IMAGES_PER_TIMELINE_OR_ALBUM} 张照片，当前已达上限。`);
+        return existingImages;
+      }
+      if (incomingImages.length > remaining) {
+        window.alert(`${scopeLabel}最多支持 ${MAX_IMAGES_PER_TIMELINE_OR_ALBUM} 张照片，本次仅添加前 ${remaining} 张。`);
+      }
+      return [...existingImages, ...incomingImages.slice(0, remaining)];
+    };
+
     if (type === 'timeline') {
-      const { eventId, title, date, description, imageUrl, text } = data;
+      const { eventId, title, date, description, text } = data;
       if (eventId === 'new') {
+        const incomingImages = createImages(`${newId}-img`, text).slice(0, MAX_IMAGES_PER_TIMELINE_OR_ALBUM);
         const newEntry: TimelineEntry = {
           id: newId,
           title,
           date,
           description,
           rotation: (Math.random() * 4) - 2,
-          images: imageUrl ? [{ id: newId, imageUrl, text }] : [],
+          images: incomingImages,
           coverFocus: { x: 50, y: 42 },
           type: 'timeline'
         };
@@ -261,9 +289,10 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
       } else {
         const updatedEntries = timelineEntries.map(entry => {
           if (entry.id === eventId) {
+            const incomingImages = createImages(`${newId}-img`, text);
             return {
               ...entry,
-              images: imageUrl ? [...entry.images, { id: newId, imageUrl, text }] : entry.images,
+              images: appendImagesWithLimit(entry.images, incomingImages, '单个时间轴事件'),
               coverFocus: entry.coverFocus ?? { x: 50, y: 42 },
             };
           }
@@ -272,29 +301,45 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
         setTimelineEntries(updatedEntries);
       }
     } else if (type === 'album') {
-      const { eventId, title, date, imageUrl, text } = data;
+      const { eventId, title, date, text } = data;
       
       if (eventId === 'loose') {
-        // Loose photo
-        const newEntry: TimelineEntry = {
-          id: newId,
-          title: '',
-          date,
-          description: '',
-          rotation: (Math.random() * 4) - 2,
-          images: imageUrl ? [{ id: newId, imageUrl, text }] : [],
-          type: 'loose_photo'
-        };
-        setTimelineEntries(sortByDateDesc([newEntry, ...timelineEntries]));
+        if (imageUrls.length > 0) {
+          const looseEntries: TimelineEntry[] = imageUrls.map((url, idx) => {
+            const looseId = `${newId}-${idx}`;
+            return {
+              id: looseId,
+              title: '',
+              date,
+              description: '',
+              rotation: (Math.random() * 4) - 2,
+              images: [{ id: `${looseId}-img`, imageUrl: url, text }],
+              type: 'loose_photo',
+            };
+          });
+          setTimelineEntries(sortByDateDesc([...looseEntries, ...timelineEntries]));
+        } else {
+          const newEntry: TimelineEntry = {
+            id: newId,
+            title: '',
+            date,
+            description: '',
+            rotation: (Math.random() * 4) - 2,
+            images: [],
+            type: 'loose_photo'
+          };
+          setTimelineEntries(sortByDateDesc([newEntry, ...timelineEntries]));
+        }
       } else if (eventId === 'new') {
         const trimmedTitle = title?.trim() || '未命名相册';
+        const incomingImages = createImages(`${newId}-img`, text).slice(0, MAX_IMAGES_PER_TIMELINE_OR_ALBUM);
         const newEntry: TimelineEntry = {
           id: newId,
           title: trimmedTitle,
           date,
           description: '',
           rotation: (Math.random() * 4) - 2,
-          images: imageUrl ? [{ id: newId, imageUrl, text }] : [],
+          images: incomingImages,
           type: 'album'
         };
         setTimelineEntries(sortByDateDesc([newEntry, ...timelineEntries]));
@@ -302,9 +347,10 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
         // Check if album exists by ID
         const updatedEntries = timelineEntries.map(entry => {
           if (entry.id === eventId) {
+            const incomingImages = createImages(`${newId}-img`, text);
             return {
               ...entry,
-              images: imageUrl ? [...entry.images, { id: newId, imageUrl, text }] : entry.images
+              images: appendImagesWithLimit(entry.images, incomingImages, '单个相册'),
             };
           }
           return entry;
@@ -1357,23 +1403,32 @@ function AddEntryModal({
   const [title, setTitle] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [description, setDescription] = useState('');
-  const [imageUrl, setImageUrl] = useState('');
+  const [imageUrls, setImageUrls] = useState<string[]>([]);
   const [text, setText] = useState('');
   const [isUploadingImage, setIsUploadingImage] = useState(false);
 
   const handleImageInput = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const selectedFiles: File[] = Array.from(e.target.files ?? []);
+    if (selectedFiles.length === 0) return;
+    const filesToUpload = selectedFiles.slice(0, MAX_ENTRY_UPLOAD_IMAGES);
 
     setIsUploadingImage(true);
     try {
-      const url = await onUploadImage(file);
-      setImageUrl(url);
+      const uploadedUrls: string[] = [];
+      for (const file of filesToUpload) {
+        const url = await onUploadImage(file);
+        uploadedUrls.push(url);
+      }
+      setImageUrls(uploadedUrls);
+      if (selectedFiles.length > MAX_ENTRY_UPLOAD_IMAGES) {
+        window.alert(`一次最多上传 ${MAX_ENTRY_UPLOAD_IMAGES} 张，已保留前 ${MAX_ENTRY_UPLOAD_IMAGES} 张。`);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : '图片上传失败';
       window.alert(message);
     } finally {
       setIsUploadingImage(false);
+      e.target.value = '';
     }
   };
 
@@ -1381,11 +1436,11 @@ function AddEntryModal({
     e.preventDefault();
     if (type === 'timeline') {
       if (eventId === 'new' && (!title.trim() || !date)) return;
-      onAdd(type, { eventId, title, date, description, imageUrl, text });
+      onAdd(type, { eventId, title, date, description, imageUrls, text });
     } else if (type === 'album') {
       if ((eventId === 'new' || eventId === 'loose') && !date) return;
       if (eventId === 'new' && !title.trim()) return;
-      onAdd(type, { eventId, title, date, imageUrl, text });
+      onAdd(type, { eventId, title, date, imageUrls, text });
     } else if (type === 'treehole') {
       if (!text.trim()) return;
       onAdd('treehole', { date, text });
@@ -1417,7 +1472,7 @@ function AddEntryModal({
             <button
               key={t}
               type="button"
-              onClick={() => { setType(t); setEventId(t === 'album' ? 'loose' : 'new'); setImageUrl(''); setText(''); }}
+              onClick={() => { setType(t); setEventId(t === 'album' ? 'loose' : 'new'); setImageUrls([]); setText(''); }}
               className={`flex-1 py-3 text-sm font-bold rounded-xl transition-all flex items-center justify-center gap-2 ${
                 type === t ? `${theme.cardBg} ${theme.accent} shadow-sm` : `${theme.textMuted} hover:opacity-80`
               }`}
@@ -1558,29 +1613,36 @@ function AddEntryModal({
             <>
               {/* Local Image Upload Field */}
               <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="mt-4">
-                <label className="block text-sm font-bold text-stone-500 mb-2 tracking-widest">上传照片 (可选)</label>
+                <label className="block text-sm font-bold text-stone-500 mb-2 tracking-widest">上传照片 (可选，单次最多 10 张；单个事件/相册最多 30 张)</label>
                 <label className="relative flex flex-col items-center justify-center w-full h-36 border-2 border-dashed border-pink-200 rounded-xl bg-pink-50/50 hover:bg-pink-50 transition-colors cursor-pointer overflow-hidden group">
-                  {imageUrl ? (
-                    <div className="relative w-full h-full">
-                      <img src={imageUrl} className="w-full h-full object-cover" alt="Preview" />
-                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                        <span className="text-white font-medium text-sm">点击更换图片</span>
+                  {imageUrls.length > 0 ? (
+                    <div className="relative w-full h-full p-2">
+                      <div className="grid h-full grid-cols-5 gap-1">
+                        {imageUrls.slice(0, 10).map((url, idx) => (
+                          <img key={`${url}-${idx}`} src={url} className="h-full w-full rounded-md object-cover" alt={`Preview ${idx + 1}`} />
+                        ))}
                       </div>
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <span className="text-white font-medium text-sm">点击重新选择图片</span>
+                      </div>
+                      <span className="absolute right-2 top-2 rounded-full bg-black/60 px-2 py-1 text-xs font-bold text-white">
+                        {imageUrls.length} / {MAX_ENTRY_UPLOAD_IMAGES}
+                      </span>
                     </div>
                   ) : (
                     <div className="flex flex-col items-center text-pink-400">
                       <ImagePlus size={28} className="mb-2 opacity-80" />
-                      <span className="text-sm font-bold">点击选择本地图片</span>
+                      <span className="text-sm font-bold">点击选择本地图片（可多选）</span>
                     </div>
                   )}
-                  <input type="file" className="hidden" accept="image/*" disabled={isUploadingImage} onChange={(e) => void handleImageInput(e)} />
+                  <input type="file" className="hidden" accept="image/*" multiple disabled={isUploadingImage} onChange={(e) => void handleImageInput(e)} />
                 </label>
               </motion.div>
 
               {/* Image Text/Remark Field */}
-              {imageUrl && (
+              {imageUrls.length > 0 && (
                 <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="mt-4">
-                  <label className="block text-sm font-bold text-stone-500 mb-2 tracking-widest">照片备注 (可选)</label>
+                  <label className="block text-sm font-bold text-stone-500 mb-2 tracking-widest">照片备注 (可选，批量上传会应用到全部照片)</label>
                   <textarea
                     value={text} onChange={(e) => setText(e.target.value)}
                     placeholder="写一句简短的描述..."
