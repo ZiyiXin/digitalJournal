@@ -117,6 +117,8 @@ export const THEMES = {
 
 export const ThemeContext = React.createContext(THEMES.default);
 export const useTheme = () => React.useContext(ThemeContext);
+const NoticeContext = React.createContext<(message: string) => void>(() => {});
+const useNotice = () => React.useContext(NoticeContext);
 
 const treeholeColors = ['bg-[#fff0f3]', 'bg-[#fdf4ff]', 'bg-[#f0fdf4]', 'bg-[#fffbeb]', 'bg-[#f0f9ff]'];
 const MAX_ENTRY_UPLOAD_IMAGES = 10;
@@ -191,6 +193,29 @@ function useMasonryCols() {
   return cols;
 }
 
+type TextPromptDialogState = {
+  title: string;
+  label: string;
+  value: string;
+  placeholder?: string;
+  multiline?: boolean;
+  inputType?: 'text' | 'date';
+  confirmText?: string;
+  allowEmpty?: boolean;
+};
+
+type ConfirmDialogState = {
+  title: string;
+  message: string;
+  confirmText?: string;
+  danger?: boolean;
+};
+
+type NoticeItem = {
+  id: number;
+  message: string;
+};
+
 // --- Main App ---
 function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: { space: Space, onBack: () => void, onUpdateSpace: (space: Space) => void, themeName: ThemeName, setThemeName: (theme: ThemeName) => void }) {
   const [timelineEntries, setTimelineEntries] = useState<TimelineEntry[]>(space.entries);
@@ -219,8 +244,55 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
   } | null>(null);
   const avatarPreviewRef = useRef<HTMLDivElement | null>(null);
   const [spaceDescription, setSpaceDescription] = useState(space.description);
-  const [isEditingDescription, setIsEditingDescription] = useState(false);
-  const [descriptionDraft, setDescriptionDraft] = useState(space.description);
+  const [textPromptDialog, setTextPromptDialog] = useState<TextPromptDialogState | null>(null);
+  const textPromptResolverRef = useRef<((value: string | null) => void) | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
+  const confirmResolverRef = useRef<((confirmed: boolean) => void) | null>(null);
+  const notify = useNotice();
+
+  const openTextPrompt = useCallback((config: Omit<TextPromptDialogState, 'value'> & { defaultValue: string }) => (
+    new Promise<string | null>((resolve) => {
+      if (textPromptResolverRef.current) textPromptResolverRef.current(null);
+      textPromptResolverRef.current = resolve;
+      setTextPromptDialog({
+        title: config.title,
+        label: config.label,
+        value: config.defaultValue,
+        placeholder: config.placeholder,
+        multiline: config.multiline,
+        inputType: config.inputType,
+        confirmText: config.confirmText,
+        allowEmpty: config.allowEmpty,
+      });
+    })
+  ), []);
+
+  const closeTextPrompt = useCallback((value: string | null) => {
+    const resolver = textPromptResolverRef.current;
+    textPromptResolverRef.current = null;
+    setTextPromptDialog(null);
+    resolver?.(value);
+  }, []);
+
+  const openConfirmDialog = useCallback((config: ConfirmDialogState) => (
+    new Promise<boolean>((resolve) => {
+      if (confirmResolverRef.current) confirmResolverRef.current(false);
+      confirmResolverRef.current = resolve;
+      setConfirmDialog(config);
+    })
+  ), []);
+
+  const closeConfirmDialog = useCallback((confirmed: boolean) => {
+    const resolver = confirmResolverRef.current;
+    confirmResolverRef.current = null;
+    setConfirmDialog(null);
+    resolver?.(confirmed);
+  }, []);
+
+  React.useEffect(() => () => {
+    if (textPromptResolverRef.current) textPromptResolverRef.current(null);
+    if (confirmResolverRef.current) confirmResolverRef.current(false);
+  }, []);
 
   React.useEffect(() => {
     setTimelineEntries(space.entries);
@@ -231,8 +303,6 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
     setAvatarFocus(incomingAvatarFocus);
     setAvatarFocusDraft(incomingAvatarFocus);
     setSpaceDescription(space.description);
-    setDescriptionDraft(space.description);
-    setIsEditingDescription(false);
   }, [space.id]);
 
   React.useEffect(() => {
@@ -266,7 +336,7 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
         setter(url);
       } catch (error) {
         const message = error instanceof Error ? error.message : '图片上传失败';
-        window.alert(message);
+        notify(message);
       } finally {
         setIsUploadingImage(false);
       }
@@ -389,11 +459,11 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
     ) => {
       const remaining = MAX_IMAGES_PER_TIMELINE_OR_ALBUM - existingImages.length;
       if (remaining <= 0) {
-        window.alert(`${scopeLabel}最多支持 ${MAX_IMAGES_PER_TIMELINE_OR_ALBUM} 张照片，当前已达上限。`);
+        notify(`${scopeLabel}最多支持 ${MAX_IMAGES_PER_TIMELINE_OR_ALBUM} 张照片，当前已达上限。`);
         return existingImages;
       }
       if (incomingImages.length > remaining) {
-        window.alert(`${scopeLabel}最多支持 ${MAX_IMAGES_PER_TIMELINE_OR_ALBUM} 张照片，本次仅添加前 ${remaining} 张。`);
+        notify(`${scopeLabel}最多支持 ${MAX_IMAGES_PER_TIMELINE_OR_ALBUM} 张照片，本次仅添加前 ${remaining} 张。`);
       }
       return [...existingImages, ...incomingImages.slice(0, remaining)];
     };
@@ -494,17 +564,85 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
   };
 
   const handleDeleteTimelineEntry = (entryId: string) => {
-    if (!window.confirm('确认删除这条记录吗？')) return;
-    setTimelineEntries((prev) => prev.filter((entry) => entry.id !== entryId));
+    void (async () => {
+      const shouldDelete = await openConfirmDialog({
+        title: '确认删除',
+        message: '确认删除这条记录吗？',
+        confirmText: '删除',
+        danger: true,
+      });
+      if (!shouldDelete) return;
+      setTimelineEntries((prev) => prev.filter((entry) => entry.id !== entryId));
+    })();
   };
 
   const handleEditTimelineEntry = (entry: TimelineEntry) => {
-    if (entry.type === 'loose_photo') {
-      const nextDate = window.prompt('修改日期', entry.date);
+    void (async () => {
+      if (entry.type === 'loose_photo') {
+        const nextDate = await openTextPrompt({
+          title: '修改日期',
+          label: '日期',
+          defaultValue: entry.date,
+          inputType: 'date',
+        });
+        if (nextDate === null || !nextDate.trim()) return;
+
+        const currentText = entry.images[0]?.text ?? '';
+        const nextText = await openTextPrompt({
+          title: '修改照片备注',
+          label: '照片备注（可留空）',
+          defaultValue: currentText,
+          multiline: true,
+          allowEmpty: true,
+        });
+        if (nextText === null) return;
+
+        setTimelineEntries((prev) =>
+          sortByDateDesc(
+            prev.map((item) =>
+              item.id === entry.id
+                ? {
+                    ...item,
+                    date: nextDate.trim(),
+                    images:
+                      item.images.length > 0
+                        ? [{...item.images[0], text: nextText.trim()}, ...item.images.slice(1)]
+                        : item.images,
+                  }
+                : item,
+            ),
+          ),
+        );
+        return;
+      }
+
+      const defaultTitle = entry.type === 'album' ? entry.title || '未命名相册' : entry.title;
+      const nextTitle = await openTextPrompt({
+        title: '修改标题',
+        label: entry.type === 'album' ? '相册标题' : '事件标题',
+        defaultValue: defaultTitle,
+      });
+      if (nextTitle === null || !nextTitle.trim()) return;
+
+      const nextDate = await openTextPrompt({
+        title: '修改日期',
+        label: '日期',
+        defaultValue: entry.date,
+        inputType: 'date',
+      });
       if (nextDate === null || !nextDate.trim()) return;
-      const currentText = entry.images[0]?.text ?? '';
-      const nextText = window.prompt('修改照片备注', currentText);
-      if (nextText === null) return;
+
+      const nextDescription =
+        entry.type === 'timeline'
+          ? await openTextPrompt({
+              title: '修改描述',
+              label: '事件描述（可留空）',
+              defaultValue: entry.description ?? '',
+              multiline: true,
+              allowEmpty: true,
+            })
+          : entry.description ?? '';
+      if (entry.type === 'timeline' && nextDescription === null) return;
 
       setTimelineEntries((prev) =>
         sortByDateDesc(
@@ -512,81 +650,109 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
             item.id === entry.id
               ? {
                   ...item,
+                  title: nextTitle.trim(),
                   date: nextDate.trim(),
-                  images:
-                    item.images.length > 0
-                      ? [{...item.images[0], text: nextText.trim()}, ...item.images.slice(1)]
-                      : item.images,
+                  description: entry.type === 'timeline' ? nextDescription?.trim() ?? '' : item.description,
                 }
               : item,
           ),
         ),
       );
-      return;
-    }
-
-    const defaultTitle = entry.type === 'album' ? entry.title || '未命名相册' : entry.title;
-    const nextTitle = window.prompt('修改标题', defaultTitle);
-    if (nextTitle === null || !nextTitle.trim()) return;
-    const nextDate = window.prompt('修改日期', entry.date);
-    if (nextDate === null || !nextDate.trim()) return;
-    const nextDescription =
-      entry.type === 'timeline'
-        ? window.prompt('修改描述（可留空）', entry.description ?? '')
-        : entry.description ?? '';
-    if (entry.type === 'timeline' && nextDescription === null) return;
-
-    setTimelineEntries((prev) =>
-      sortByDateDesc(
-        prev.map((item) =>
-          item.id === entry.id
-            ? {
-                ...item,
-                title: nextTitle.trim(),
-                date: nextDate.trim(),
-                description: entry.type === 'timeline' ? nextDescription?.trim() ?? '' : item.description,
-              }
-            : item,
-        ),
-      ),
-    );
+    })();
   };
 
   const handleDeleteTreeholeEntry = (entryId: string) => {
-    if (!window.confirm('确认删除这条树洞留言吗？')) return;
-    setTreeholeEntries((prev) => prev.filter((entry) => entry.id !== entryId));
+    void (async () => {
+      const shouldDelete = await openConfirmDialog({
+        title: '确认删除',
+        message: '确认删除这条树洞留言吗？',
+        confirmText: '删除',
+        danger: true,
+      });
+      if (!shouldDelete) return;
+      setTreeholeEntries((prev) => prev.filter((entry) => entry.id !== entryId));
+    })();
   };
 
   const handleEditTreeholeEntry = (entry: TreeholeEntry) => {
-    const nextDate = window.prompt('修改日期', entry.date);
-    if (nextDate === null || !nextDate.trim()) return;
-    const nextText = window.prompt('修改留言', entry.text);
-    if (nextText === null || !nextText.trim()) return;
+    void (async () => {
+      const nextDate = await openTextPrompt({
+        title: '修改日期',
+        label: '日期',
+        defaultValue: entry.date,
+        inputType: 'date',
+      });
+      if (nextDate === null || !nextDate.trim()) return;
 
-    setTreeholeEntries((prev) =>
-      sortByDateDesc(
-        prev.map((item) =>
-          item.id === entry.id
-            ? {
-                ...item,
-                date: nextDate.trim(),
-                text: nextText.trim(),
-              }
-            : item,
+      const nextText = await openTextPrompt({
+        title: '修改留言',
+        label: '树洞留言',
+        defaultValue: entry.text,
+        multiline: true,
+      });
+      if (nextText === null || !nextText.trim()) return;
+
+      setTreeholeEntries((prev) =>
+        sortByDateDesc(
+          prev.map((item) =>
+            item.id === entry.id
+              ? {
+                  ...item,
+                  date: nextDate.trim(),
+                  text: nextText.trim(),
+                }
+              : item,
+          ),
         ),
-      ),
-    );
+      );
+    })();
   };
 
-  const handleSaveDescription = () => {
-    const nextDescription = descriptionDraft.replace(/\r\n/g, '\n').trim();
-    if (!nextDescription) {
-      window.alert('简介不能为空');
-      return;
-    }
-    setSpaceDescription(nextDescription);
-    setDescriptionDraft(nextDescription);
-    setIsEditingDescription(false);
+  const handleRenameCurrentSpace = () => {
+    void (async () => {
+      const nextName = await openTextPrompt({
+        title: '修改空间名称',
+        label: '空间名称',
+        defaultValue: space.name,
+      });
+      if (nextName === null) return;
+
+      const trimmedName = nextName.trim();
+      if (!trimmedName || trimmedName === space.name) return;
+
+      onUpdateSpace({
+        id: space.id,
+        name: trimmedName,
+        description: spaceDescription,
+        entries: timelineEntries,
+        treeholeEntries,
+        heroImage,
+        avatarImage,
+        avatarFocus,
+      });
+    })();
+  };
+
+  const handleTextPromptConfirm = () => {
+    if (!textPromptDialog) return;
+    if (!textPromptDialog.allowEmpty && !textPromptDialog.value.trim()) return;
+    closeTextPrompt(textPromptDialog.value);
+  };
+
+  const handleEditDescription = () => {
+    void (async () => {
+      const nextDescription = await openTextPrompt({
+        title: '修改简介',
+        label: '简介内容',
+        defaultValue: spaceDescription,
+        multiline: true,
+        confirmText: '保存',
+      });
+      if (nextDescription === null) return;
+      const trimmedDescription = nextDescription.replace(/\r\n/g, '\n').trim();
+      if (!trimmedDescription) return;
+      setSpaceDescription(trimmedDescription);
+    })();
   };
 
   return (
@@ -627,13 +793,13 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
       </div>
 
       {/* Hero Area */}
-      <div className="relative h-[55vh] w-full flex flex-col items-center justify-center overflow-hidden">
+      <div className="relative min-h-[55vh] w-full flex flex-col items-center justify-start pt-12 md:pt-16 pb-10">
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           <img src={heroImage} alt="Hero Background" className={`w-full h-full object-cover blur-md scale-105 opacity-70 ${theme.imageFilter}`} />
           <div className={`absolute inset-0 bg-gradient-to-b ${theme.headerBg}`}></div>
         </div>
 
-        <div className="relative z-10 flex flex-col items-center text-center px-6 mt-8">
+        <div className="relative z-10 flex flex-col items-center text-center px-6">
           <div className="relative group">
             <motion.div 
               initial={{ scale: 0.9, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }} transition={{ duration: 0.8, type: "spring", bounce: 0.4 }}
@@ -680,12 +846,24 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
             </button>
           </div>
 
-          <motion.h1 
-            initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: 0.8, delay: 0.2, ease: "easeOut" }}
-            className={`${theme.fontTitle} text-4xl md:text-5xl font-extrabold mb-3 ${theme.textMain} drop-shadow-sm flex items-center gap-2`}
-          >
-            {space.name} <Sparkles className={`${theme.accent} animate-pulse`} size={28} />
-          </motion.h1>
+          <div className="mb-3 flex justify-center">
+            <div className="group relative w-fit pr-10 md:pr-12">
+              <motion.h1 
+                initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: 0.8, delay: 0.2, ease: "easeOut" }}
+                className={`${theme.fontTitle} text-4xl md:text-5xl font-extrabold ${theme.textMain} drop-shadow-sm flex items-center gap-2`}
+              >
+                {space.name} <Sparkles className={`${theme.accent} animate-pulse`} size={28} />
+              </motion.h1>
+              <button
+                type="button"
+                onClick={handleRenameCurrentSpace}
+                aria-label="修改空间名称"
+                className={`absolute right-0 top-1/2 -translate-y-1/2 w-8 h-8 md:w-9 md:h-9 flex items-center justify-center rounded-full ${theme.cardBg} border ${theme.cardBorder} ${theme.accent} shadow-sm invisible opacity-0 pointer-events-none group-hover:visible group-hover:opacity-100 group-hover:pointer-events-auto focus-visible:visible focus-visible:opacity-100 focus-visible:pointer-events-auto hover:opacity-80 transition-all duration-200`}
+              >
+                <Pencil size={14} />
+              </button>
+            </div>
+          </div>
           <motion.p 
             initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: 0.8, delay: 0.4, ease: "easeOut" }}
             className={`${theme.accent} text-sm md:text-base tracking-[0.3em] uppercase mb-5 font-bold`}
@@ -694,55 +872,19 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
           </motion.p>
           <motion.div
             initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: 0.8, delay: 0.6, ease: "easeOut" }}
-            className="group relative w-full max-w-xl mx-auto"
+            className="group relative w-full max-w-xl mx-auto pr-10 md:pr-12"
           >
-            {!isEditingDescription && (
-              <div className="mb-1 flex h-9 justify-end">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setDescriptionDraft(spaceDescription);
-                    setIsEditingDescription(true);
-                  }}
-                  className={`w-8 h-8 md:w-9 md:h-9 flex items-center justify-center rounded-full ${theme.cardBg} border ${theme.cardBorder} ${theme.accent} shadow-sm opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto hover:opacity-80 transition-all duration-200`}
-                >
-                  <Pencil size={14} />
-                </button>
-              </div>
-            )}
-            {isEditingDescription ? (
-              <div className={`mt-1 rounded-2xl border ${theme.cardBorder} ${theme.cardBg} p-4 shadow-sm`}>
-                <textarea
-                  value={descriptionDraft}
-                  onChange={(e) => setDescriptionDraft(e.target.value)}
-                  rows={3}
-                  className={`w-full resize-none bg-transparent focus:outline-none ${theme.textMain} leading-relaxed text-base md:text-lg`}
-                />
-                <div className="mt-3 flex justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDescriptionDraft(spaceDescription);
-                      setIsEditingDescription(false);
-                    }}
-                    className={`px-3 py-1.5 text-sm rounded-full border ${theme.cardBorder} ${theme.textMuted} hover:opacity-80 transition-colors`}
-                  >
-                    取消
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleSaveDescription}
-                    className={`px-3 py-1.5 text-sm rounded-full text-white ${theme.bgAccent} hover:opacity-90 transition-opacity`}
-                  >
-                    保存
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <p className={`${theme.textMuted} leading-relaxed font-medium text-base md:text-lg whitespace-pre-line px-2 md:px-3`}>
-                {spaceDescription}
-              </p>
-            )}
+            <button
+              type="button"
+              onClick={handleEditDescription}
+              aria-label="修改简介"
+              className={`absolute right-0 top-1/2 -translate-y-1/2 w-8 h-8 md:w-9 md:h-9 flex items-center justify-center rounded-full ${theme.cardBg} border ${theme.cardBorder} ${theme.accent} shadow-sm invisible opacity-0 pointer-events-none group-hover:visible group-hover:opacity-100 group-hover:pointer-events-auto focus-visible:visible focus-visible:opacity-100 focus-visible:pointer-events-auto hover:opacity-80 transition-all duration-200`}
+            >
+              <Pencil size={14} />
+            </button>
+            <p className={`${theme.textMuted} leading-relaxed font-medium text-base md:text-lg whitespace-pre-line px-2 md:px-3`}>
+              {spaceDescription}
+            </p>
           </motion.div>
           
           <motion.div
@@ -955,6 +1097,33 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
           </motion.div>
         )}
       </AnimatePresence>
+
+      <TextPromptModal
+        isOpen={textPromptDialog !== null}
+        title={textPromptDialog?.title ?? ''}
+        label={textPromptDialog?.label ?? ''}
+        value={textPromptDialog?.value ?? ''}
+        placeholder={textPromptDialog?.placeholder}
+        multiline={textPromptDialog?.multiline}
+        inputType={textPromptDialog?.inputType}
+        confirmText={textPromptDialog?.confirmText}
+        allowEmpty={textPromptDialog?.allowEmpty}
+        onChange={(nextValue) =>
+          setTextPromptDialog((prev) => (prev ? {...prev, value: nextValue} : prev))
+        }
+        onCancel={() => closeTextPrompt(null)}
+        onConfirm={handleTextPromptConfirm}
+      />
+
+      <ConfirmActionModal
+        isOpen={confirmDialog !== null}
+        title={confirmDialog?.title ?? ''}
+        message={confirmDialog?.message ?? ''}
+        confirmText={confirmDialog?.confirmText}
+        danger={confirmDialog?.danger}
+        onCancel={() => closeConfirmDialog(false)}
+        onConfirm={() => closeConfirmDialog(true)}
+      />
 
       {/* Lightbox with Text */}
       <AnimatePresence>
@@ -1696,6 +1865,7 @@ function AddEntryModal({
   onUploadImage: (file: File) => Promise<string>;
 }) {
   const theme = useTheme();
+  const notify = useNotice();
   const [type, setType] = useState<'timeline' | 'album' | 'treehole'>('timeline');
   const [eventId, setEventId] = useState<'new' | string>('new');
   const [title, setTitle] = useState('');
@@ -1719,11 +1889,11 @@ function AddEntryModal({
       }
       setImageUrls(uploadedUrls);
       if (selectedFiles.length > MAX_ENTRY_UPLOAD_IMAGES) {
-        window.alert(`一次最多上传 ${MAX_ENTRY_UPLOAD_IMAGES} 张，已保留前 ${MAX_ENTRY_UPLOAD_IMAGES} 张。`);
+        notify(`一次最多上传 ${MAX_ENTRY_UPLOAD_IMAGES} 张，已保留前 ${MAX_ENTRY_UPLOAD_IMAGES} 张。`);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : '图片上传失败';
-      window.alert(message);
+      notify(message);
     } finally {
       setIsUploadingImage(false);
       e.target.value = '';
@@ -1990,26 +2160,268 @@ function AddEntryModal({
   );
 }
 
+function TextPromptModal({
+  isOpen,
+  title,
+  label,
+  value,
+  placeholder,
+  multiline = false,
+  inputType = 'text',
+  confirmText = '确定',
+  allowEmpty = false,
+  onChange,
+  onCancel,
+  onConfirm,
+}: {
+  isOpen: boolean;
+  title: string;
+  label: string;
+  value: string;
+  placeholder?: string;
+  multiline?: boolean;
+  inputType?: 'text' | 'date';
+  confirmText?: string;
+  allowEmpty?: boolean;
+  onChange: (value: string) => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const theme = useTheme();
+  const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
+
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const timer = window.setTimeout(() => {
+      inputRef.current?.focus();
+      inputRef.current?.select?.();
+    }, 30);
+    return () => window.clearTimeout(timer);
+  }, [isOpen]);
+
+  const isConfirmDisabled = !allowEmpty && !value.trim();
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[120] flex items-center justify-center p-4 md:p-6"
+        >
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 bg-black/35 backdrop-blur-sm"
+            onClick={onCancel}
+          />
+          <motion.div
+            initial={{ opacity: 0, scale: 0.97, y: 14 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.97, y: 14 }}
+            className={`relative w-full max-w-2xl rounded-3xl ${theme.cardBg} border ${theme.cardBorder} shadow-2xl p-6 md:p-8`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className={`${theme.textMain} ${theme.fontTitle} text-2xl font-bold mb-6`}>{title}</h3>
+            <label className={`block text-sm font-semibold mb-2 ${theme.textMuted}`}>{label}</label>
+            {multiline ? (
+              <textarea
+                ref={inputRef as React.RefObject<HTMLTextAreaElement>}
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+                rows={4}
+                placeholder={placeholder}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    e.preventDefault();
+                    onCancel();
+                  }
+                  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && !isConfirmDisabled) {
+                    e.preventDefault();
+                    onConfirm();
+                  }
+                }}
+                className={`w-full resize-none rounded-2xl border ${theme.cardBorder} bg-transparent px-4 py-3 ${theme.textMain} focus:outline-none focus:ring-2 focus:ring-black/10`}
+              />
+            ) : (
+              <input
+                ref={inputRef as React.RefObject<HTMLInputElement>}
+                type={inputType}
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+                placeholder={placeholder}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    e.preventDefault();
+                    onCancel();
+                  }
+                  if (e.key === 'Enter' && !isConfirmDisabled) {
+                    e.preventDefault();
+                    onConfirm();
+                  }
+                }}
+                className={`w-full rounded-2xl border ${theme.cardBorder} bg-transparent px-4 py-3 ${theme.textMain} focus:outline-none focus:ring-2 focus:ring-black/10`}
+              />
+            )}
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={onCancel}
+                className={`px-6 py-2.5 rounded-full border ${theme.cardBorder} ${theme.textMuted} hover:opacity-80 transition-colors`}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={onConfirm}
+                disabled={isConfirmDisabled}
+                className={`px-6 py-2.5 rounded-full ${theme.button} disabled:opacity-45 disabled:cursor-not-allowed transition-colors`}
+              >
+                {confirmText}
+              </button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+function ConfirmActionModal({
+  isOpen,
+  title,
+  message,
+  confirmText = '确定',
+  danger = false,
+  onCancel,
+  onConfirm,
+}: {
+  isOpen: boolean;
+  title: string;
+  message: string;
+  confirmText?: string;
+  danger?: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const theme = useTheme();
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[120] flex items-center justify-center p-4 md:p-6"
+        >
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 bg-black/35 backdrop-blur-sm"
+            onClick={onCancel}
+          />
+          <motion.div
+            initial={{ opacity: 0, scale: 0.97, y: 14 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.97, y: 14 }}
+            className={`relative w-full max-w-xl rounded-3xl ${theme.cardBg} border ${theme.cardBorder} shadow-2xl p-6 md:p-8`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className={`${theme.textMain} ${theme.fontTitle} text-2xl font-bold mb-4`}>{title}</h3>
+            <p className={`${theme.textMuted} text-base leading-relaxed`}>{message}</p>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={onCancel}
+                className={`px-6 py-2.5 rounded-full border ${theme.cardBorder} ${theme.textMuted} hover:opacity-80 transition-colors`}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={onConfirm}
+                className={`px-6 py-2.5 rounded-full text-white transition-colors ${danger ? 'bg-rose-500 hover:bg-rose-600' : theme.bgAccent}`}
+              >
+                {confirmText}
+              </button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+function NoticeStack({
+  notices,
+  onDismiss,
+}: {
+  notices: NoticeItem[];
+  onDismiss: (id: number) => void;
+}) {
+  const theme = useTheme();
+
+  return (
+    <div className="pointer-events-none fixed right-4 top-4 z-[140] flex w-[min(92vw,420px)] flex-col gap-2">
+      <AnimatePresence initial={false}>
+        {notices.map((notice) => (
+          <motion.button
+            key={notice.id}
+            type="button"
+            initial={{ opacity: 0, y: -12, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -8, scale: 0.98 }}
+            onClick={() => onDismiss(notice.id)}
+            className={`pointer-events-auto w-full rounded-2xl border ${theme.cardBorder} ${theme.cardBg} px-4 py-3 text-left shadow-xl backdrop-blur-md`}
+          >
+            <p className={`${theme.textMain} text-sm font-medium leading-relaxed`}>{notice.message}</p>
+          </motion.button>
+        ))}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 // --- Portal Component ---
 function Portal({
   spaces,
+  portalTitle,
+  onUpdatePortalTitle,
   onSelectSpace,
   onCreateSpace,
   onRenameSpace,
   onDeleteSpace,
 }: {
   spaces: Space[];
+  portalTitle: string;
+  onUpdatePortalTitle: (title: string) => void;
   onSelectSpace: (id: string) => void;
   onCreateSpace: (name: string, avatar: string) => Promise<void>;
   onRenameSpace: (id: string, name: string) => Promise<void>;
   onDeleteSpace: (id: string) => Promise<void>;
 }) {
   const theme = useTheme();
+  const notify = useNotice();
   const [isCreating, setIsCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const [newAvatar, setNewAvatar] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [renameTarget, setRenameTarget] = useState<Space | null>(null);
+  const [renameDraft, setRenameDraft] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<Space | null>(null);
+  const [isEditingPortalTitle, setIsEditingPortalTitle] = useState(false);
+  const [portalTitleDraft, setPortalTitleDraft] = useState(portalTitle);
+
+  React.useEffect(() => {
+    if (!isEditingPortalTitle) {
+      setPortalTitleDraft(portalTitle);
+    }
+  }, [portalTitle, isEditingPortalTitle]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -2022,7 +2434,7 @@ function Portal({
         setNewAvatar('');
       } catch (error) {
         const message = error instanceof Error ? error.message : '创建空间失败';
-        window.alert(message);
+        notify(message);
       } finally {
         setIsSubmitting(false);
       }
@@ -2038,7 +2450,7 @@ function Portal({
         setNewAvatar(url);
       } catch (error) {
         const message = error instanceof Error ? error.message : '头像上传失败';
-        window.alert(message);
+        notify(message);
       } finally {
         setIsUploadingAvatar(false);
       }
@@ -2046,26 +2458,41 @@ function Portal({
   };
 
   const handleRenameSpace = async (space: Space) => {
-    const nextName = window.prompt('修改空间名称', space.name);
-    if (nextName === null || !nextName.trim() || nextName.trim() === space.name) return;
+    const trimmedName = renameDraft.trim();
+    if (!trimmedName || trimmedName === space.name) {
+      setRenameTarget(null);
+      return;
+    }
 
     try {
-      await onRenameSpace(space.id, nextName.trim());
+      await onRenameSpace(space.id, trimmedName);
+      setRenameTarget(null);
     } catch (error) {
       const message = error instanceof Error ? error.message : '修改空间名称失败';
-      window.alert(message);
+      notify(message);
     }
   };
 
   const handleDeleteSpace = async (space: Space) => {
-    if (!window.confirm(`确认删除空间「${space.name}」吗？此操作不可撤销。`)) return;
-
     try {
       await onDeleteSpace(space.id);
+      setDeleteTarget(null);
     } catch (error) {
       const message = error instanceof Error ? error.message : '删除空间失败';
-      window.alert(message);
+      notify(message);
     }
+  };
+
+  const handleSavePortalTitle = () => {
+    const trimmedTitle = portalTitleDraft.trim();
+    if (!trimmedTitle) {
+      notify('标题不能为空');
+      return;
+    }
+    if (trimmedTitle !== portalTitle) {
+      onUpdatePortalTitle(trimmedTitle);
+    }
+    setIsEditingPortalTitle(false);
   };
 
   return (
@@ -2081,7 +2508,20 @@ function Portal({
           animate={{ opacity: 1, y: 0 }}
           className="text-center mb-24"
         >
-          <h1 className="text-3xl md:text-4xl font-serif text-stone-800 tracking-[0.2em] mb-6">我的手账空间</h1>
+          <div className="group relative inline-flex items-center justify-center pr-10 md:pr-12 mb-6">
+            <h1 className="text-3xl md:text-4xl font-serif text-stone-800 tracking-[0.2em]">{portalTitle}</h1>
+            <button
+              type="button"
+              onClick={() => {
+                setPortalTitleDraft(portalTitle);
+                setIsEditingPortalTitle(true);
+              }}
+              aria-label="修改空间页标题"
+              className={`absolute right-0 top-1/2 -translate-y-1/2 w-8 h-8 md:w-9 md:h-9 flex items-center justify-center rounded-full ${theme.cardBg} border ${theme.cardBorder} ${theme.accent} shadow-sm invisible opacity-0 pointer-events-none group-hover:visible group-hover:opacity-100 group-hover:pointer-events-auto focus-visible:visible focus-visible:opacity-100 focus-visible:pointer-events-auto hover:opacity-80 transition-all duration-200`}
+            >
+              <Pencil size={14} />
+            </button>
+          </div>
           <div className="w-12 h-[1px] bg-stone-400 mx-auto"></div>
         </motion.div>
 
@@ -2107,7 +2547,8 @@ function Portal({
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      void handleRenameSpace(space);
+                      setRenameTarget(space);
+                      setRenameDraft(space.name);
                     }}
                     className={`w-7 h-7 flex items-center justify-center rounded-full bg-white/85 ${theme.accent} hover:opacity-80 shadow-sm transition-colors`}
                   >
@@ -2117,7 +2558,7 @@ function Portal({
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      void handleDeleteSpace(space);
+                      setDeleteTarget(space);
                     }}
                     className={`w-7 h-7 flex items-center justify-center rounded-full bg-white/85 ${theme.accent} hover:opacity-80 shadow-sm transition-colors`}
                   >
@@ -2268,6 +2709,40 @@ function Portal({
           </motion.div>
         )}
       </AnimatePresence>
+
+      <TextPromptModal
+        isOpen={isEditingPortalTitle}
+        title="修改空间页标题"
+        label="标题"
+        value={portalTitleDraft}
+        onChange={setPortalTitleDraft}
+        onCancel={() => setIsEditingPortalTitle(false)}
+        onConfirm={handleSavePortalTitle}
+      />
+
+      <TextPromptModal
+        isOpen={renameTarget !== null}
+        title="修改空间名称"
+        label="空间名称"
+        value={renameDraft}
+        onChange={setRenameDraft}
+        onCancel={() => setRenameTarget(null)}
+        onConfirm={() => {
+          if (renameTarget) void handleRenameSpace(renameTarget);
+        }}
+      />
+
+      <ConfirmActionModal
+        isOpen={deleteTarget !== null}
+        title="确认删除空间"
+        message={deleteTarget ? `确认删除空间「${deleteTarget.name}」吗？此操作不可撤销。` : ''}
+        confirmText="删除"
+        danger
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => {
+          if (deleteTarget) void handleDeleteSpace(deleteTarget);
+        }}
+      />
     </div>
   );
 }
@@ -2278,6 +2753,7 @@ export default function App() {
     const stored = localStorage.getItem('journal-theme') as ThemeName | null;
     return stored && stored in THEMES ? stored : 'default';
   });
+  const [portalTitle, setPortalTitle] = useState(() => localStorage.getItem('journal-portal-title') || '我的手账空间');
   const [spaces, setSpaces] = useState<Space[]>([]);
   const [currentSpaceId, setCurrentSpaceId] = useState<string | null>(null);
   const [isBootstrapping, setIsBootstrapping] = useState(true);
@@ -2286,10 +2762,42 @@ export default function App() {
   const pendingSaveRef = useRef<Record<string, Space>>({});
   const saveInFlightRef = useRef<Record<string, boolean>>({});
   const shouldSaveAgainRef = useRef<Record<string, boolean>>({});
+  const [notices, setNotices] = useState<NoticeItem[]>([]);
+  const noticeTimersRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
+
+  const dismissNotice = useCallback((id: number) => {
+    const timer = noticeTimersRef.current[id];
+    if (timer) {
+      clearTimeout(timer);
+      delete noticeTimersRef.current[id];
+    }
+    setNotices((prev) => prev.filter((notice) => notice.id !== id));
+  }, []);
+
+  const notify = useCallback((message: string) => {
+    const trimmed = message.trim();
+    if (!trimmed) return;
+    const id = Date.now() + Math.floor(Math.random() * 10000);
+    setNotices((prev) => [...prev, {id, message: trimmed}]);
+    const timer = setTimeout(() => {
+      setNotices((prev) => prev.filter((notice) => notice.id !== id));
+      delete noticeTimersRef.current[id];
+    }, 2600);
+    noticeTimersRef.current[id] = timer;
+  }, []);
 
   React.useEffect(() => {
     localStorage.setItem('journal-theme', themeName);
   }, [themeName]);
+
+  React.useEffect(() => {
+    localStorage.setItem('journal-portal-title', portalTitle);
+  }, [portalTitle]);
+
+  React.useEffect(() => () => {
+    (Object.values(noticeTimersRef.current) as Array<ReturnType<typeof setTimeout>>).forEach((timer) => clearTimeout(timer));
+    noticeTimersRef.current = {};
+  }, []);
 
   React.useEffect(() => {
     let mounted = true;
@@ -2418,31 +2926,36 @@ export default function App() {
 
   return (
     <ThemeContext.Provider value={currentTheme}>
-      <div className={`min-h-screen transition-colors duration-500 ${currentTheme.globalBg} ${currentTheme.textMain} ${currentTheme.fontMain}`}>
-        <AnimatePresence mode="wait">
-          {currentSpaceId === null || !currentSpace ? (
-            <motion.div key="portal" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.5 }}>
-              <Portal 
-                spaces={spaces} 
-                onSelectSpace={setCurrentSpaceId} 
-                onCreateSpace={handleCreateSpace}
-                onRenameSpace={handleRenameSpace}
-                onDeleteSpace={handleDeleteSpace}
-              />
-            </motion.div>
-          ) : (
-            <motion.div key="space" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.5 }}>
-              <SpaceDetail 
-                space={currentSpace!} 
-                onBack={() => setCurrentSpaceId(null)} 
-                onUpdateSpace={handleUpdateSpace}
-                themeName={themeName}
-                setThemeName={setThemeName}
-              />
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+      <NoticeContext.Provider value={notify}>
+        <div className={`min-h-screen transition-colors duration-500 ${currentTheme.globalBg} ${currentTheme.textMain} ${currentTheme.fontMain}`}>
+          <AnimatePresence mode="wait">
+            {currentSpaceId === null || !currentSpace ? (
+              <motion.div key="portal" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.5 }}>
+                <Portal 
+                  spaces={spaces} 
+                  portalTitle={portalTitle}
+                  onUpdatePortalTitle={setPortalTitle}
+                  onSelectSpace={setCurrentSpaceId} 
+                  onCreateSpace={handleCreateSpace}
+                  onRenameSpace={handleRenameSpace}
+                  onDeleteSpace={handleDeleteSpace}
+                />
+              </motion.div>
+            ) : (
+              <motion.div key="space" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.5 }}>
+                <SpaceDetail 
+                  space={currentSpace!} 
+                  onBack={() => setCurrentSpaceId(null)} 
+                  onUpdateSpace={handleUpdateSpace}
+                  themeName={themeName}
+                  setThemeName={setThemeName}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
+          <NoticeStack notices={notices} onDismiss={dismissNotice} />
+        </div>
+      </NoticeContext.Provider>
     </ThemeContext.Provider>
   );
 }
