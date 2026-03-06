@@ -23,6 +23,9 @@ npm install
 
 ```bash
 PORT=3001
+LEGACY_OWNER_EMAIL=legacy@digital-journal.local
+LEGACY_OWNER_PASSWORD=ChangeMeNow123!
+LEGACY_OWNER_NICKNAME=Legacy Owner
 ```
 
 ### 3) 启动开发环境
@@ -43,6 +46,7 @@ npm run dev          # 并行启动前后端
 npm run dev:client   # 仅前端
 npm run dev:server   # 仅后端
 npm run start:server # 后端（非 watch）
+npm run verify:stage1 # 阶段1账号隔离验收
 npm run lint         # TypeScript 类型检查
 npm run build        # 构建前端产物
 ```
@@ -54,9 +58,18 @@ npm run build        # 构建前端产物
 
 以上目录已加入 `.gitignore`。
 
+## 迭代文档
+
+- 阶段 1（账号 + 数据隔离）改造清单：`docs/stage1-account-isolation-checklist.md`
+
 ## 当前 API（核心）
 
 - `GET /api/health`
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- `POST /api/auth/logout`
+- `POST /api/auth/change-password`
+- `GET /api/me`
 - `GET /api/spaces`
 - `GET /api/spaces/:id`
 - `POST /api/spaces`

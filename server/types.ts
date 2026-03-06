@@ -1,4 +1,5 @@
 export type TimelineEntryType = 'timeline' | 'album' | 'loose_photo';
+export type SpaceVisibility = 'private' | 'public' | 'friends' | 'custom';
 
 export interface TimelineImage {
   id: string;
@@ -43,6 +44,7 @@ export interface Space {
   avatarFocus: AvatarFocus;
   heroImage: string;
   description: string;
+  visibility?: SpaceVisibility;
   entries: TimelineEntry[];
   treeholeEntries: TreeholeEntry[];
 }
@@ -53,4 +55,12 @@ export interface CreateSpaceInput {
   avatarFocus?: AvatarFocus;
   heroImage?: string;
   description?: string;
+  visibility?: SpaceVisibility;
+}
+
+export interface User {
+  id: string;
+  email: string;
+  nickname: string;
+  avatarImage?: string;
 }

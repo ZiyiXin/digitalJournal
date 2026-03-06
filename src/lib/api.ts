@@ -1,12 +1,27 @@
-import type {Space} from '../types';
+import type {Space, User} from '../types';
 
 type JsonOptions = Omit<RequestInit, 'body'> & {
   body?: unknown;
 };
 
+export class ApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
+export function isApiError(error: unknown): error is ApiError {
+  return error instanceof ApiError;
+}
+
 async function requestJson<T>(path: string, options: JsonOptions = {}): Promise<T> {
   const response = await fetch(path, {
     ...options,
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...(options.headers ?? {}),
@@ -22,7 +37,7 @@ async function requestJson<T>(path: string, options: JsonOptions = {}): Promise<
     } catch {
       // ignore json parse errors and keep fallback message
     }
-    throw new Error(message);
+    throw new ApiError(message, response.status);
   }
 
   if (response.status === 204) {
@@ -30,6 +45,37 @@ async function requestJson<T>(path: string, options: JsonOptions = {}): Promise<
   }
 
   return (await response.json()) as T;
+}
+
+export async function fetchMe(): Promise<User> {
+  return requestJson<User>('/api/me');
+}
+
+export async function register(payload: {email: string; password: string; nickname: string}): Promise<User> {
+  return requestJson<User>('/api/auth/register', {
+    method: 'POST',
+    body: payload,
+  });
+}
+
+export async function login(payload: {email: string; password: string}): Promise<User> {
+  return requestJson<User>('/api/auth/login', {
+    method: 'POST',
+    body: payload,
+  });
+}
+
+export async function logout(): Promise<void> {
+  return requestJson<void>('/api/auth/logout', {
+    method: 'POST',
+  });
+}
+
+export async function changePassword(payload: {currentPassword: string; newPassword: string}): Promise<void> {
+  return requestJson<void>('/api/auth/change-password', {
+    method: 'POST',
+    body: payload,
+  });
 }
 
 export async function fetchSpaces(): Promise<Space[]> {
@@ -77,6 +123,7 @@ export async function uploadImage(file: File): Promise<string> {
 
   const response = await fetch('/api/uploads', {
     method: 'POST',
+    credentials: 'include',
     body: formData,
   });
 
@@ -88,7 +135,7 @@ export async function uploadImage(file: File): Promise<string> {
     } catch {
       // ignore json parse errors and keep fallback message
     }
-    throw new Error(message);
+    throw new ApiError(message, response.status);
   }
 
   const payload = (await response.json()) as {url: string};
