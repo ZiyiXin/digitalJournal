@@ -1,8 +1,21 @@
 import React, { useCallback, useRef, useState } from 'react';
 import { Plus, X, Image as ImageIcon, Calendar, ChevronDown, MessageSquare, Clock, Camera, Star, MapPin, Heart, Sparkles, ImagePlus, ChevronRight, ChevronLeft, ChevronUp, ArrowLeft, Palette, Pencil, Trash2, Move } from 'lucide-react';
 import { motion, AnimatePresence, useScroll, useSpring } from 'motion/react';
-import {createSpace, deleteSpace, fetchSpaces, saveSpaceSnapshot, updateSpaceMeta, uploadImage} from './lib/api';
-import type {AvatarFocus, Space, TimelineEntry, TreeholeEntry} from './types';
+import {
+  createSpace,
+  deleteSpace,
+  fetchMe,
+  fetchSpaces,
+  isApiError,
+  login,
+  logout,
+  changePassword,
+  register,
+  saveSpaceSnapshot,
+  updateSpaceMeta,
+  uploadImage,
+} from './lib/api';
+import type {AvatarFocus, Space, TimelineEntry, TreeholeEntry, User} from './types';
 
 // --- Themes ---
 export type ThemeName = 'default' | 'anime' | 'scifi' | 'retro' | 'fantasy';
@@ -132,6 +145,20 @@ const normalizeAvatarFocus = (focus?: Partial<AvatarFocus>): AvatarFocus => ({
   y: clampValue(Number.isFinite(focus?.y ?? NaN) ? (focus?.y as number) : DEFAULT_AVATAR_FOCUS.y, 0, 100),
   scale: clampValue(Number.isFinite(focus?.scale ?? NaN) ? (focus?.scale as number) : DEFAULT_AVATAR_FOCUS.scale, AVATAR_SCALE_MIN, AVATAR_SCALE_MAX),
 });
+
+function getPasswordStrength(input: string): {label: string; score: number} {
+  let score = 0;
+  if (input.length >= 8) score += 1;
+  if (input.length >= 12) score += 1;
+  if (/[a-z]/.test(input)) score += 1;
+  if (/[A-Z]/.test(input)) score += 1;
+  if (/\d/.test(input)) score += 1;
+  if (/[^A-Za-z0-9]/.test(input)) score += 1;
+
+  if (score <= 2) return {label: '弱', score: 1};
+  if (score <= 4) return {label: '中', score: 2};
+  return {label: '强', score: 3};
+}
 
 // --- Safe Image Component ---
 function SafeImage({
@@ -2356,6 +2383,171 @@ function ConfirmActionModal({
   );
 }
 
+function ChangePasswordModal({
+  isOpen,
+  currentPassword,
+  newPassword,
+  confirmPassword,
+  errorMessage,
+  isSubmitting,
+  onCurrentPasswordChange,
+  onNewPasswordChange,
+  onConfirmPasswordChange,
+  onCancel,
+  onSubmit,
+}: {
+  isOpen: boolean;
+  currentPassword: string;
+  newPassword: string;
+  confirmPassword: string;
+  errorMessage: string | null;
+  isSubmitting: boolean;
+  onCurrentPasswordChange: (value: string) => void;
+  onNewPasswordChange: (value: string) => void;
+  onConfirmPasswordChange: (value: string) => void;
+  onCancel: () => void;
+  onSubmit: () => void;
+}) {
+  const theme = useTheme();
+  const currentInputRef = useRef<HTMLInputElement | null>(null);
+
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const timer = window.setTimeout(() => {
+      currentInputRef.current?.focus();
+    }, 30);
+    return () => window.clearTimeout(timer);
+  }, [isOpen]);
+
+  const strength = getPasswordStrength(newPassword);
+  const hasMinLength = newPassword.length >= 8;
+  const matchesConfirm = newPassword.length > 0 && newPassword === confirmPassword;
+  const differsFromCurrent = newPassword.length > 0 && currentPassword.length > 0 && newPassword !== currentPassword;
+
+  const isConfirmDisabled =
+    isSubmitting ||
+    !currentPassword ||
+    !newPassword ||
+    !confirmPassword ||
+    !hasMinLength ||
+    !matchesConfirm ||
+    !differsFromCurrent;
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[130] flex items-center justify-center p-4 md:p-6"
+        >
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 bg-black/35 backdrop-blur-sm"
+            onClick={isSubmitting ? undefined : onCancel}
+          />
+          <motion.div
+            initial={{ opacity: 0, scale: 0.97, y: 14 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.97, y: 14 }}
+            className={`relative w-full max-w-xl rounded-3xl ${theme.cardBg} border ${theme.cardBorder} shadow-2xl p-6 md:p-8`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className={`${theme.textMain} ${theme.fontTitle} text-2xl font-bold mb-5`}>修改密码</h3>
+
+            <div className="space-y-4">
+              <div>
+                <label className={`block text-sm font-semibold mb-2 ${theme.textMuted}`}>当前密码</label>
+                <input
+                  ref={currentInputRef}
+                  type="password"
+                  autoComplete="current-password"
+                  value={currentPassword}
+                  onChange={(e) => onCurrentPasswordChange(e.target.value)}
+                  className={`w-full rounded-2xl border ${theme.cardBorder} bg-transparent px-4 py-3 ${theme.textMain} focus:outline-none focus:ring-2 focus:ring-black/10`}
+                />
+              </div>
+
+              <div>
+                <label className={`block text-sm font-semibold mb-2 ${theme.textMuted}`}>新密码</label>
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  value={newPassword}
+                  onChange={(e) => onNewPasswordChange(e.target.value)}
+                  className={`w-full rounded-2xl border ${theme.cardBorder} bg-transparent px-4 py-3 ${theme.textMain} focus:outline-none focus:ring-2 focus:ring-black/10`}
+                />
+                <div className="mt-2 flex items-center gap-2">
+                  <div className="flex w-24 gap-1">
+                    <div className={`h-1.5 flex-1 rounded-full ${strength.score >= 1 ? 'bg-rose-400' : 'bg-stone-300'}`} />
+                    <div className={`h-1.5 flex-1 rounded-full ${strength.score >= 2 ? 'bg-amber-400' : 'bg-stone-300'}`} />
+                    <div className={`h-1.5 flex-1 rounded-full ${strength.score >= 3 ? 'bg-emerald-500' : 'bg-stone-300'}`} />
+                  </div>
+                  <span className={`text-xs ${theme.textMuted}`}>强度：{strength.label}</span>
+                </div>
+              </div>
+
+              <div>
+                <label className={`block text-sm font-semibold mb-2 ${theme.textMuted}`}>确认新密码</label>
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  value={confirmPassword}
+                  onChange={(e) => onConfirmPasswordChange(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape' && !isSubmitting) {
+                      e.preventDefault();
+                      onCancel();
+                    }
+                    if (e.key === 'Enter' && !isConfirmDisabled) {
+                      e.preventDefault();
+                      onSubmit();
+                    }
+                  }}
+                  className={`w-full rounded-2xl border ${theme.cardBorder} bg-transparent px-4 py-3 ${theme.textMain} focus:outline-none focus:ring-2 focus:ring-black/10`}
+                />
+              </div>
+
+              {!hasMinLength && newPassword.length > 0 && (
+                <p className="text-xs text-rose-500">新密码长度至少 8 位</p>
+              )}
+              {!differsFromCurrent && newPassword.length > 0 && currentPassword.length > 0 && (
+                <p className="text-xs text-rose-500">新密码不能与当前密码相同</p>
+              )}
+              {!matchesConfirm && confirmPassword.length > 0 && (
+                <p className="text-xs text-rose-500">两次输入的新密码不一致</p>
+              )}
+              {errorMessage && <p className="text-sm text-rose-500">{errorMessage}</p>}
+            </div>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                disabled={isSubmitting}
+                onClick={onCancel}
+                className={`px-6 py-2.5 rounded-full border ${theme.cardBorder} ${theme.textMuted} hover:opacity-80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed`}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={onSubmit}
+                disabled={isConfirmDisabled}
+                className={`px-6 py-2.5 rounded-full ${theme.button} disabled:opacity-45 disabled:cursor-not-allowed transition-colors`}
+              >
+                {isSubmitting ? '提交中...' : '确认修改'}
+              </button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
 function NoticeStack({
   notices,
   onDismiss,
@@ -2747,6 +2939,132 @@ function Portal({
   );
 }
 
+function AuthPanel({
+  onLogin,
+  onRegister,
+  theme,
+}: {
+  onLogin: (payload: {email: string; password: string}) => Promise<void>;
+  onRegister: (payload: {email: string; password: string; nickname: string}) => Promise<void>;
+  theme: (typeof THEMES)[ThemeName];
+}) {
+  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [nickname, setNickname] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = useCallback(async (event: React.FormEvent) => {
+    event.preventDefault();
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      if (mode === 'login') {
+        await onLogin({
+          email: email.trim(),
+          password: password.trim(),
+        });
+      } else {
+        await onRegister({
+          email: email.trim(),
+          password: password.trim(),
+          nickname: nickname.trim(),
+        });
+      }
+    } catch (submitError) {
+      const message = submitError instanceof Error ? submitError.message : '认证失败，请重试';
+      setError(message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [mode, onLogin, onRegister, email, password, nickname]);
+
+  return (
+    <div className={`min-h-screen flex items-center justify-center px-4 ${theme.globalBg} ${theme.textMain}`}>
+      <motion.div
+        initial={{opacity: 0, y: 14}}
+        animate={{opacity: 1, y: 0}}
+        className={`w-full max-w-md ${theme.cardBg} ${theme.cardBorder} ${theme.cardShadow} ${theme.radius} border p-8`}
+      >
+        <div className="mb-6 text-center">
+          <p className={`text-xs tracking-[0.2em] uppercase ${theme.textMuted}`}>Digital Journal</p>
+          <h1 className={`mt-3 text-3xl ${theme.fontTitle}`}>{mode === 'login' ? '欢迎回来' : '创建账号'}</h1>
+        </div>
+
+        <form className="space-y-4" onSubmit={handleSubmit}>
+          <div>
+            <label className={`block text-xs mb-1 tracking-wider uppercase ${theme.textMuted}`}>邮箱</label>
+            <input
+              type="email"
+              autoComplete={mode === 'login' ? 'username' : 'email'}
+              required
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              className="w-full border border-stone-300 px-3 py-2 bg-white text-stone-900 focus:outline-none focus:border-stone-700"
+              placeholder="you@example.com"
+            />
+          </div>
+
+          {mode === 'register' && (
+            <div>
+              <label className={`block text-xs mb-1 tracking-wider uppercase ${theme.textMuted}`}>昵称</label>
+              <input
+                type="text"
+                autoComplete="nickname"
+                required
+                maxLength={32}
+                value={nickname}
+                onChange={(event) => setNickname(event.target.value)}
+                className="w-full border border-stone-300 px-3 py-2 bg-white text-stone-900 focus:outline-none focus:border-stone-700"
+                placeholder="你的昵称"
+              />
+            </div>
+          )}
+
+          <div>
+            <label className={`block text-xs mb-1 tracking-wider uppercase ${theme.textMuted}`}>密码</label>
+            <input
+              type="password"
+              autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+              required
+              minLength={8}
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              className="w-full border border-stone-300 px-3 py-2 bg-white text-stone-900 focus:outline-none focus:border-stone-700"
+              placeholder="至少 8 位"
+            />
+          </div>
+
+          {error && <p className="text-sm text-red-600">{error}</p>}
+
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className={`w-full py-2 ${theme.button} disabled:opacity-60 disabled:cursor-not-allowed`}
+          >
+            {isSubmitting ? '提交中...' : mode === 'login' ? '登录' : '注册'}
+          </button>
+        </form>
+
+        <div className="mt-4 text-center text-sm">
+          {mode === 'login' ? '还没有账号？' : '已有账号？'}
+          <button
+            type="button"
+            className={`ml-2 underline ${theme.accent}`}
+            onClick={() => {
+              setMode((prev) => (prev === 'login' ? 'register' : 'login'));
+              setError(null);
+            }}
+          >
+            {mode === 'login' ? '去注册' : '去登录'}
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 // --- Main App Entry ---
 export default function App() {
   const [themeName, setThemeName] = useState<ThemeName>(() => {
@@ -2754,6 +3072,7 @@ export default function App() {
     return stored && stored in THEMES ? stored : 'default';
   });
   const [portalTitle, setPortalTitle] = useState(() => localStorage.getItem('journal-portal-title') || '我的手账空间');
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [spaces, setSpaces] = useState<Space[]>([]);
   const [currentSpaceId, setCurrentSpaceId] = useState<string | null>(null);
   const [isBootstrapping, setIsBootstrapping] = useState(true);
@@ -2764,6 +3083,12 @@ export default function App() {
   const shouldSaveAgainRef = useRef<Record<string, boolean>>({});
   const [notices, setNotices] = useState<NoticeItem[]>([]);
   const noticeTimersRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
+  const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
+  const [currentPasswordDraft, setCurrentPasswordDraft] = useState('');
+  const [newPasswordDraft, setNewPasswordDraft] = useState('');
+  const [confirmPasswordDraft, setConfirmPasswordDraft] = useState('');
+  const [changePasswordError, setChangePasswordError] = useState<string | null>(null);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
 
   const dismissNotice = useCallback((id: number) => {
     const timer = noticeTimersRef.current[id];
@@ -2799,18 +3124,55 @@ export default function App() {
     noticeTimersRef.current = {};
   }, []);
 
+  const clearSpacePersistenceQueues = useCallback(() => {
+    (Object.values(saveTimersRef.current) as Array<ReturnType<typeof setTimeout>>).forEach((timer) => clearTimeout(timer));
+    saveTimersRef.current = {};
+    pendingSaveRef.current = {};
+    saveInFlightRef.current = {};
+    shouldSaveAgainRef.current = {};
+  }, []);
+
+  const resetChangePasswordDialog = useCallback(() => {
+    setCurrentPasswordDraft('');
+    setNewPasswordDraft('');
+    setConfirmPasswordDraft('');
+    setChangePasswordError(null);
+    setIsChangingPassword(false);
+  }, []);
+
+  const moveToSignedOutState = useCallback(() => {
+    setCurrentUser(null);
+    setSpaces([]);
+    setCurrentSpaceId(null);
+    setIsChangePasswordOpen(false);
+    clearSpacePersistenceQueues();
+    resetChangePasswordDialog();
+  }, [clearSpacePersistenceQueues, resetChangePasswordDialog]);
+
+  const normalizeErrorMessage = useCallback((error: unknown, fallback: string): string => (
+    error instanceof Error ? error.message : fallback
+  ), []);
+
   React.useEffect(() => {
     let mounted = true;
     (async () => {
       try {
+        const me = await fetchMe();
+        if (!mounted) return;
+        setCurrentUser(me);
+
         const data = await fetchSpaces();
         if (!mounted) return;
         setSpaces(data);
         setBootstrapError(null);
       } catch (error) {
         if (!mounted) return;
-        const message = error instanceof Error ? error.message : '加载空间数据失败';
-        setBootstrapError(message);
+        if (isApiError(error) && error.status === 401) {
+          moveToSignedOutState();
+          setBootstrapError(null);
+          return;
+        }
+        setBootstrapError(normalizeErrorMessage(error, '加载空间数据失败'));
       } finally {
         if (mounted) setIsBootstrapping(false);
       }
@@ -2818,13 +3180,102 @@ export default function App() {
 
     return () => {
       mounted = false;
-      (Object.values(saveTimersRef.current) as Array<ReturnType<typeof setTimeout>>).forEach((timer) => clearTimeout(timer));
-      saveTimersRef.current = {};
-      pendingSaveRef.current = {};
-      saveInFlightRef.current = {};
-      shouldSaveAgainRef.current = {};
+      clearSpacePersistenceQueues();
     };
+  }, [clearSpacePersistenceQueues, moveToSignedOutState, normalizeErrorMessage]);
+
+  const handleLogin = useCallback(async (payload: {email: string; password: string}) => {
+    const user = await login(payload);
+    const data = await fetchSpaces();
+    setCurrentUser(user);
+    setSpaces(data);
+    setCurrentSpaceId(null);
+    setBootstrapError(null);
   }, []);
+
+  const handleRegister = useCallback(async (payload: {email: string; password: string; nickname: string}) => {
+    const user = await register(payload);
+    const data = await fetchSpaces();
+    setCurrentUser(user);
+    setSpaces(data);
+    setCurrentSpaceId(null);
+    setBootstrapError(null);
+  }, []);
+
+  const handleLogout = useCallback(async () => {
+    try {
+      await logout();
+    } finally {
+      moveToSignedOutState();
+    }
+  }, [moveToSignedOutState]);
+
+  const openChangePasswordDialog = useCallback(() => {
+    resetChangePasswordDialog();
+    setIsChangePasswordOpen(true);
+  }, [resetChangePasswordDialog]);
+
+  const closeChangePasswordDialog = useCallback(() => {
+    if (isChangingPassword) return;
+    setIsChangePasswordOpen(false);
+    resetChangePasswordDialog();
+  }, [isChangingPassword, resetChangePasswordDialog]);
+
+  const handleSubmitChangePassword = useCallback(async () => {
+    const currentPassword = currentPasswordDraft;
+    const newPassword = newPasswordDraft;
+    const confirmPassword = confirmPasswordDraft;
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setChangePasswordError('请完整填写当前密码、新密码和确认密码');
+      return;
+    }
+    if (newPassword.length < 8) {
+      setChangePasswordError('新密码长度至少 8 位');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setChangePasswordError('两次输入的新密码不一致');
+      return;
+    }
+    if (newPassword === currentPassword) {
+      setChangePasswordError('新密码不能与当前密码相同');
+      return;
+    }
+
+    setChangePasswordError(null);
+    setIsChangingPassword(true);
+    try {
+      await changePassword({
+        currentPassword,
+        newPassword,
+      });
+      setIsChangePasswordOpen(false);
+      resetChangePasswordDialog();
+      notify('密码已更新');
+    } catch (error) {
+      if (isApiError(error) && error.status === 401) {
+        if (error.message === 'Current password is incorrect') {
+          setChangePasswordError('当前密码错误');
+          return;
+        }
+        notify('登录状态已失效，请重新登录');
+        moveToSignedOutState();
+        return;
+      }
+      setChangePasswordError(normalizeErrorMessage(error, '修改密码失败'));
+    } finally {
+      setIsChangingPassword(false);
+    }
+  }, [
+    confirmPasswordDraft,
+    currentPasswordDraft,
+    moveToSignedOutState,
+    newPasswordDraft,
+    normalizeErrorMessage,
+    notify,
+    resetChangePasswordDialog,
+  ]);
 
   React.useEffect(() => {
     if (!currentSpaceId) return;
@@ -2848,8 +3299,12 @@ export default function App() {
     try {
       await saveSpaceSnapshot(snapshot);
     } catch (error) {
-      // eslint-disable-next-line no-console
-      console.error('Failed to persist space snapshot', error);
+      if (isApiError(error) && error.status === 401) {
+        notify('登录状态已失效，请重新登录');
+        moveToSignedOutState();
+        return;
+      }
+      notify(normalizeErrorMessage(error, '保存失败'));
     } finally {
       saveInFlightRef.current[spaceId] = false;
       if (shouldSaveAgainRef.current[spaceId]) {
@@ -2857,7 +3312,7 @@ export default function App() {
         void flushSpaceSave(spaceId);
       }
     }
-  }, []);
+  }, [moveToSignedOutState, normalizeErrorMessage, notify]);
 
   const handleUpdateSpace = useCallback((updatedSpace: Space) => {
     setSpaces((prev) => prev.map((space) => (space.id === updatedSpace.id ? updatedSpace : space)));
@@ -2872,31 +3327,58 @@ export default function App() {
   }, [flushSpaceSave]);
 
   const handleCreateSpace = useCallback(async (name: string, avatarImage: string) => {
-    const created = await createSpace({
-      name,
-      avatarImage,
-    });
-    setSpaces((prev) => [...prev, created]);
-  }, []);
+    try {
+      const created = await createSpace({
+        name,
+        avatarImage,
+      });
+      setSpaces((prev) => [...prev, created]);
+    } catch (error) {
+      if (isApiError(error) && error.status === 401) {
+        notify('登录状态已失效，请重新登录');
+        moveToSignedOutState();
+        return;
+      }
+      throw error;
+    }
+  }, [moveToSignedOutState, notify]);
 
   const handleRenameSpace = useCallback(async (id: string, name: string) => {
-    const updated = await updateSpaceMeta(id, {name});
-    setSpaces((prev) => prev.map((space) => (space.id === id ? updated : space)));
-  }, []);
+    try {
+      const updated = await updateSpaceMeta(id, {name});
+      setSpaces((prev) => prev.map((space) => (space.id === id ? updated : space)));
+    } catch (error) {
+      if (isApiError(error) && error.status === 401) {
+        notify('登录状态已失效，请重新登录');
+        moveToSignedOutState();
+        return;
+      }
+      throw error;
+    }
+  }, [moveToSignedOutState, notify]);
 
   const handleDeleteSpace = useCallback(async (id: string) => {
-    await deleteSpace(id);
-    setSpaces((prev) => prev.filter((space) => space.id !== id));
-    setCurrentSpaceId((prev) => (prev === id ? null : prev));
-    delete pendingSaveRef.current[id];
-    delete saveInFlightRef.current[id];
-    delete shouldSaveAgainRef.current[id];
-    const timer = saveTimersRef.current[id];
-    if (timer) {
-      clearTimeout(timer);
-      delete saveTimersRef.current[id];
+    try {
+      await deleteSpace(id);
+      setSpaces((prev) => prev.filter((space) => space.id !== id));
+      setCurrentSpaceId((prev) => (prev === id ? null : prev));
+      delete pendingSaveRef.current[id];
+      delete saveInFlightRef.current[id];
+      delete shouldSaveAgainRef.current[id];
+      const timer = saveTimersRef.current[id];
+      if (timer) {
+        clearTimeout(timer);
+        delete saveTimersRef.current[id];
+      }
+    } catch (error) {
+      if (isApiError(error) && error.status === 401) {
+        notify('登录状态已失效，请重新登录');
+        moveToSignedOutState();
+        return;
+      }
+      throw error;
     }
-  }, []);
+  }, [moveToSignedOutState, notify]);
 
   const currentTheme = THEMES[themeName];
   const currentSpace = currentSpaceId ? spaces.find((space) => space.id === currentSpaceId) ?? null : null;
@@ -2924,10 +3406,31 @@ export default function App() {
     );
   }
 
+  if (!currentUser) {
+    return <AuthPanel onLogin={handleLogin} onRegister={handleRegister} theme={currentTheme} />;
+  }
+
   return (
     <ThemeContext.Provider value={currentTheme}>
       <NoticeContext.Provider value={notify}>
         <div className={`min-h-screen transition-colors duration-500 ${currentTheme.globalBg} ${currentTheme.textMain} ${currentTheme.fontMain}`}>
+          <div className="fixed right-3 top-3 z-[120] flex items-center gap-2 bg-white/85 px-3 py-1.5 text-xs text-stone-700 shadow-sm border border-stone-200">
+            <span className="max-w-[140px] truncate">{currentUser.nickname}</span>
+            <button
+              type="button"
+              onClick={openChangePasswordDialog}
+              className="text-stone-600 hover:text-stone-900 underline"
+            >
+              修改密码
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleLogout()}
+              className="text-stone-600 hover:text-stone-900 underline"
+            >
+              退出登录
+            </button>
+          </div>
           <AnimatePresence mode="wait">
             {currentSpaceId === null || !currentSpace ? (
               <motion.div key="portal" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.5 }}>
@@ -2953,6 +3456,28 @@ export default function App() {
               </motion.div>
             )}
           </AnimatePresence>
+          <ChangePasswordModal
+            isOpen={isChangePasswordOpen}
+            currentPassword={currentPasswordDraft}
+            newPassword={newPasswordDraft}
+            confirmPassword={confirmPasswordDraft}
+            errorMessage={changePasswordError}
+            isSubmitting={isChangingPassword}
+            onCurrentPasswordChange={(value) => {
+              setCurrentPasswordDraft(value);
+              if (changePasswordError) setChangePasswordError(null);
+            }}
+            onNewPasswordChange={(value) => {
+              setNewPasswordDraft(value);
+              if (changePasswordError) setChangePasswordError(null);
+            }}
+            onConfirmPasswordChange={(value) => {
+              setConfirmPasswordDraft(value);
+              if (changePasswordError) setChangePasswordError(null);
+            }}
+            onCancel={closeChangePasswordDialog}
+            onSubmit={() => void handleSubmitChangePassword()}
+          />
           <NoticeStack notices={notices} onDismiss={dismissNotice} />
         </div>
       </NoticeContext.Provider>
