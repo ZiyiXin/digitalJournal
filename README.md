@@ -26,6 +26,9 @@ PORT=3001
 LEGACY_OWNER_EMAIL=legacy@digital-journal.local
 LEGACY_OWNER_PASSWORD=ChangeMeNow123!
 LEGACY_OWNER_NICKNAME=Legacy Owner
+STORAGE_CAPACITY_GB=5
+# 可选：限制可访问后台面板的邮箱（逗号分隔），不填则所有登录用户可访问
+# ADMIN_EMAILS=admin@example.com
 ```
 
 ### 3) 启动开发环境
@@ -70,6 +73,7 @@ npm run build        # 构建前端产物
 - `POST /api/auth/logout`
 - `POST /api/auth/change-password`
 - `GET /api/me`
+- `GET /api/admin/dashboard`（后台统计：用户数、照片存储、容量使用）
 - `GET /api/spaces`
 - `GET /api/spaces/:id`
 - `POST /api/spaces`

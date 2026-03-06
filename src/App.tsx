@@ -1,9 +1,38 @@
 import React, { useCallback, useRef, useState } from 'react';
-import { Plus, X, Image as ImageIcon, Calendar, ChevronDown, MessageSquare, Clock, Camera, Star, MapPin, Heart, Sparkles, ImagePlus, ChevronRight, ChevronLeft, ChevronUp, ArrowLeft, Palette, Pencil, Trash2, Move } from 'lucide-react';
+import {
+  Plus,
+  X,
+  Image as ImageIcon,
+  Calendar,
+  ChevronDown,
+  MessageSquare,
+  Clock,
+  Camera,
+  Star,
+  MapPin,
+  Heart,
+  Sparkles,
+  ImagePlus,
+  ChevronRight,
+  ChevronLeft,
+  ChevronUp,
+  ArrowLeft,
+  Palette,
+  Pencil,
+  Trash2,
+  Move,
+  Users,
+  Database,
+  Images,
+  HardDrive,
+  RefreshCw,
+  AlertTriangle,
+} from 'lucide-react';
 import { motion, AnimatePresence, useScroll, useSpring } from 'motion/react';
 import {
   createSpace,
   deleteSpace,
+  fetchAdminDashboard,
   fetchMe,
   fetchSpaces,
   isApiError,
@@ -15,7 +44,7 @@ import {
   updateSpaceMeta,
   uploadImage,
 } from './lib/api';
-import type {AvatarFocus, Space, TimelineEntry, TreeholeEntry, User} from './types';
+import type {AdminDashboardStats, AvatarFocus, Space, TimelineEntry, TreeholeEntry, User} from './types';
 
 // --- Themes ---
 export type ThemeName = 'default' | 'anime' | 'scifi' | 'retro' | 'fantasy';
@@ -158,6 +187,27 @@ function getPasswordStrength(input: string): {label: string; score: number} {
   if (score <= 2) return {label: '弱', score: 1};
   if (score <= 4) return {label: '中', score: 2};
   return {label: '强', score: 3};
+}
+
+function formatBytes(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return '0 B';
+
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let normalized = value;
+  let unitIndex = 0;
+  while (normalized >= 1024 && unitIndex < units.length - 1) {
+    normalized /= 1024;
+    unitIndex += 1;
+  }
+
+  const fractionDigits = normalized >= 100 ? 0 : normalized >= 10 ? 1 : 2;
+  return `${normalized.toFixed(fractionDigits)} ${units[unitIndex]}`;
+}
+
+function formatPercent(value: number): string {
+  const safeValue = Number.isFinite(value) ? value : 0;
+  const fractionDigits = safeValue >= 100 ? 1 : safeValue >= 10 ? 1 : 2;
+  return `${safeValue.toFixed(fractionDigits)}%`;
 }
 
 // --- Safe Image Component ---
@@ -2578,6 +2628,222 @@ function NoticeStack({
   );
 }
 
+function AdminDashboardPanel({
+  isOpen,
+  data,
+  isLoading,
+  errorMessage,
+  onRefresh,
+  onClose,
+}: {
+  isOpen: boolean;
+  data: AdminDashboardStats | null;
+  isLoading: boolean;
+  errorMessage: string | null;
+  onRefresh: () => void;
+  onClose: () => void;
+}) {
+  const theme = useTheme();
+
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
+  const usagePercent = Math.max(0, data?.usagePercent ?? 0);
+  const usageBarPercent = Math.min(usagePercent, 100);
+  const usageColorClass = usagePercent >= 95 ? 'bg-rose-500' : usagePercent >= 80 ? 'bg-amber-500' : 'bg-emerald-500';
+  const generatedAtText = data ? new Date(data.generatedAt).toLocaleString('zh-CN', {hour12: false}) : '-';
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          initial={{opacity: 0}}
+          animate={{opacity: 1}}
+          exit={{opacity: 0}}
+          className="fixed inset-0 z-[160] bg-black/45 backdrop-blur-sm p-4 md:p-8"
+          onClick={onClose}
+        >
+          <motion.div
+            initial={{opacity: 0, y: 18, scale: 0.98}}
+            animate={{opacity: 1, y: 0, scale: 1}}
+            exit={{opacity: 0, y: 12, scale: 0.98}}
+            transition={{duration: 0.2}}
+            onClick={(event) => event.stopPropagation()}
+            className={`mx-auto flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-3xl border ${theme.cardBorder} ${theme.cardBg} shadow-2xl`}
+          >
+            <div className={`flex items-center justify-between border-b px-5 py-4 md:px-7 ${theme.cardBorder}`}>
+              <div>
+                <p className={`text-[11px] uppercase tracking-[0.25em] ${theme.textMuted}`}>Admin</p>
+                <h2 className={`mt-1 text-xl font-semibold ${theme.textMain}`}>后台管理面板</h2>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={onRefresh}
+                  className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm ${theme.cardBorder} ${theme.textMain} hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-50`}
+                  disabled={isLoading}
+                >
+                  <RefreshCw size={15} className={isLoading ? 'animate-spin' : ''} />
+                  刷新
+                </button>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className={`inline-flex h-9 w-9 items-center justify-center rounded-full border ${theme.cardBorder} ${theme.textMain} hover:opacity-80`}
+                  aria-label="关闭管理面板"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            <div className="overflow-y-auto px-5 py-5 md:px-7 md:py-6">
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <p className={`text-sm ${theme.textMuted}`}>最近更新时间：{generatedAtText}</p>
+                {usagePercent >= 90 && (
+                  <div className="inline-flex items-center gap-2 rounded-full bg-rose-500/15 px-3 py-1 text-xs text-rose-600">
+                    <AlertTriangle size={13} />
+                    容量占用接近上限，请及时扩容
+                  </div>
+                )}
+              </div>
+
+              {errorMessage && (
+                <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
+                  {errorMessage}
+                </div>
+              )}
+
+              {!data && isLoading && (
+                <div className={`rounded-2xl border ${theme.cardBorder} px-4 py-10 text-center text-sm ${theme.textMuted}`}>
+                  正在加载管理数据...
+                </div>
+              )}
+
+              {data && (
+                <div className="space-y-4">
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <div className={`rounded-2xl border ${theme.cardBorder} ${theme.cardBg} p-4`}>
+                      <div className="mb-2 flex items-center justify-between">
+                        <p className={`text-xs uppercase tracking-[0.2em] ${theme.textMuted}`}>用户总数</p>
+                        <Users size={16} className={theme.accent} />
+                      </div>
+                      <p className={`text-2xl font-semibold ${theme.textMain}`}>{data.userCount}</p>
+                    </div>
+                    <div className={`rounded-2xl border ${theme.cardBorder} ${theme.cardBg} p-4`}>
+                      <div className="mb-2 flex items-center justify-between">
+                        <p className={`text-xs uppercase tracking-[0.2em] ${theme.textMuted}`}>空间数量</p>
+                        <Database size={16} className={theme.accent} />
+                      </div>
+                      <p className={`text-2xl font-semibold ${theme.textMain}`}>{data.spaceCount}</p>
+                    </div>
+                    <div className={`rounded-2xl border ${theme.cardBorder} ${theme.cardBg} p-4`}>
+                      <div className="mb-2 flex items-center justify-between">
+                        <p className={`text-xs uppercase tracking-[0.2em] ${theme.textMuted}`}>照片文件</p>
+                        <Images size={16} className={theme.accent} />
+                      </div>
+                      <p className={`text-2xl font-semibold ${theme.textMain}`}>{data.photoFileCount}</p>
+                    </div>
+                    <div className={`rounded-2xl border ${theme.cardBorder} ${theme.cardBg} p-4`}>
+                      <div className="mb-2 flex items-center justify-between">
+                        <p className={`text-xs uppercase tracking-[0.2em] ${theme.textMuted}`}>已用容量</p>
+                        <HardDrive size={16} className={theme.accent} />
+                      </div>
+                      <p className={`text-2xl font-semibold ${theme.textMain}`}>{formatBytes(data.usedBytes)}</p>
+                    </div>
+                  </div>
+
+                  <div className={`rounded-2xl border ${theme.cardBorder} ${theme.cardBg} p-4`}>
+                    <div className="mb-2 flex items-center justify-between">
+                      <p className={`text-sm font-semibold ${theme.textMain}`}>容量使用情况</p>
+                      <span className={`text-xs ${theme.textMuted}`}>{formatPercent(usagePercent)}</span>
+                    </div>
+                    <div className="h-3 w-full overflow-hidden rounded-full bg-stone-200/80">
+                      <div className={`h-full ${usageColorClass}`} style={{width: `${usageBarPercent}%`}} />
+                    </div>
+                    <div className={`mt-2 flex flex-wrap gap-3 text-xs ${theme.textMuted}`}>
+                      <span>总容量：{formatBytes(data.capacityBytes)}</span>
+                      <span>剩余：{formatBytes(data.remainingBytes)}</span>
+                      <span>已用：{formatBytes(data.usedBytes)}</span>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+                      <p className="text-xs uppercase tracking-[0.2em] text-emerald-600">已关联照片</p>
+                      <p className="mt-2 text-2xl font-semibold text-emerald-700">{data.referencedExistingPhotoCount}</p>
+                      <p className="mt-1 text-xs text-emerald-600">数据库记录且文件存在</p>
+                    </div>
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                      <p className="text-xs uppercase tracking-[0.2em] text-amber-600">孤立文件</p>
+                      <p className="mt-2 text-2xl font-semibold text-amber-700">{data.orphanPhotoFileCount}</p>
+                      <p className="mt-1 text-xs text-amber-600">磁盘存在但未被记录引用</p>
+                    </div>
+                    <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
+                      <p className="text-xs uppercase tracking-[0.2em] text-rose-600">缺失文件</p>
+                      <p className="mt-2 text-2xl font-semibold text-rose-700">{data.missingPhotoFileCount}</p>
+                      <p className="mt-1 text-xs text-rose-600">数据库引用但文件丢失</p>
+                    </div>
+                  </div>
+
+                  <div className={`rounded-2xl border ${theme.cardBorder} ${theme.cardBg} p-4`}>
+                    <div className="mb-3 flex items-center justify-between">
+                      <p className={`text-sm font-semibold ${theme.textMain}`}>按用户存储分布</p>
+                      <span className={`text-xs ${theme.textMuted}`}>共 {data.perUser.length} 个账号节点</span>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full text-left text-sm">
+                        <thead>
+                          <tr className={`border-b ${theme.cardBorder}`}>
+                            <th className={`px-2 py-2 text-xs font-medium uppercase tracking-[0.15em] ${theme.textMuted}`}>用户</th>
+                            <th className={`px-2 py-2 text-xs font-medium uppercase tracking-[0.15em] ${theme.textMuted}`}>空间</th>
+                            <th className={`px-2 py-2 text-xs font-medium uppercase tracking-[0.15em] ${theme.textMuted}`}>照片文件</th>
+                            <th className={`px-2 py-2 text-xs font-medium uppercase tracking-[0.15em] ${theme.textMuted}`}>已引用</th>
+                            <th className={`px-2 py-2 text-xs font-medium uppercase tracking-[0.15em] ${theme.textMuted}`}>使用容量</th>
+                            <th className={`px-2 py-2 text-xs font-medium uppercase tracking-[0.15em] ${theme.textMuted}`}>占比</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {data.perUser.map((item) => (
+                            <tr key={item.userId} className={`border-b last:border-b-0 ${theme.cardBorder}`}>
+                              <td className="px-2 py-2 align-top">
+                                <div className={`font-medium ${theme.textMain}`}>{item.nickname}</div>
+                                <div className={`text-xs ${theme.textMuted}`}>{item.email === '-' ? '未登记邮箱' : item.email}</div>
+                              </td>
+                              <td className={`px-2 py-2 ${theme.textMain}`}>{item.spaceCount}</td>
+                              <td className={`px-2 py-2 ${theme.textMain}`}>{item.photoFileCount}</td>
+                              <td className={`px-2 py-2 ${theme.textMain}`}>{item.referencedPhotoCount}</td>
+                              <td className={`px-2 py-2 ${theme.textMain}`}>{formatBytes(item.storageBytes)}</td>
+                              <td className={`px-2 py-2 ${theme.textMain}`}>{formatPercent(item.storageSharePercent)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div className={`text-xs ${theme.textMuted}`}>
+                    引用照片总数：{data.photoReferenceCount}（去重后）。
+                  </div>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
 // --- Portal Component ---
 function Portal({
   spaces,
@@ -3089,6 +3355,10 @@ export default function App() {
   const [confirmPasswordDraft, setConfirmPasswordDraft] = useState('');
   const [changePasswordError, setChangePasswordError] = useState<string | null>(null);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false);
+  const [adminStats, setAdminStats] = useState<AdminDashboardStats | null>(null);
+  const [isAdminStatsLoading, setIsAdminStatsLoading] = useState(false);
+  const [adminStatsError, setAdminStatsError] = useState<string | null>(null);
 
   const dismissNotice = useCallback((id: number) => {
     const timer = noticeTimersRef.current[id];
@@ -3145,6 +3415,10 @@ export default function App() {
     setSpaces([]);
     setCurrentSpaceId(null);
     setIsChangePasswordOpen(false);
+    setIsAdminPanelOpen(false);
+    setAdminStats(null);
+    setIsAdminStatsLoading(false);
+    setAdminStatsError(null);
     clearSpacePersistenceQueues();
     resetChangePasswordDialog();
   }, [clearSpacePersistenceQueues, resetChangePasswordDialog]);
@@ -3152,6 +3426,33 @@ export default function App() {
   const normalizeErrorMessage = useCallback((error: unknown, fallback: string): string => (
     error instanceof Error ? error.message : fallback
   ), []);
+
+  const loadAdminStats = useCallback(async () => {
+    setIsAdminStatsLoading(true);
+    setAdminStatsError(null);
+    try {
+      const stats = await fetchAdminDashboard();
+      setAdminStats(stats);
+    } catch (error) {
+      if (isApiError(error) && error.status === 401) {
+        notify('登录状态已失效，请重新登录');
+        moveToSignedOutState();
+        return;
+      }
+      setAdminStatsError(normalizeErrorMessage(error, '加载管理面板数据失败'));
+    } finally {
+      setIsAdminStatsLoading(false);
+    }
+  }, [moveToSignedOutState, normalizeErrorMessage, notify]);
+
+  const openAdminPanel = useCallback(() => {
+    setIsAdminPanelOpen(true);
+    void loadAdminStats();
+  }, [loadAdminStats]);
+
+  const closeAdminPanel = useCallback(() => {
+    setIsAdminPanelOpen(false);
+  }, []);
 
   React.useEffect(() => {
     let mounted = true;
@@ -3190,6 +3491,9 @@ export default function App() {
     setCurrentUser(user);
     setSpaces(data);
     setCurrentSpaceId(null);
+    setIsAdminPanelOpen(false);
+    setAdminStats(null);
+    setAdminStatsError(null);
     setBootstrapError(null);
   }, []);
 
@@ -3199,6 +3503,9 @@ export default function App() {
     setCurrentUser(user);
     setSpaces(data);
     setCurrentSpaceId(null);
+    setIsAdminPanelOpen(false);
+    setAdminStats(null);
+    setAdminStatsError(null);
     setBootstrapError(null);
   }, []);
 
@@ -3418,6 +3725,13 @@ export default function App() {
             <span className="max-w-[140px] truncate">{currentUser.nickname}</span>
             <button
               type="button"
+              onClick={openAdminPanel}
+              className="text-stone-600 hover:text-stone-900 underline"
+            >
+              管理面板
+            </button>
+            <button
+              type="button"
               onClick={openChangePasswordDialog}
               className="text-stone-600 hover:text-stone-900 underline"
             >
@@ -3456,6 +3770,14 @@ export default function App() {
               </motion.div>
             )}
           </AnimatePresence>
+          <AdminDashboardPanel
+            isOpen={isAdminPanelOpen}
+            data={adminStats}
+            isLoading={isAdminStatsLoading}
+            errorMessage={adminStatsError}
+            onRefresh={() => void loadAdminStats()}
+            onClose={closeAdminPanel}
+          />
           <ChangePasswordModal
             isOpen={isChangePasswordOpen}
             currentPassword={currentPasswordDraft}

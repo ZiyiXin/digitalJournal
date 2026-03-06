@@ -55,3 +55,30 @@ export interface User {
   nickname: string;
   avatarImage?: string;
 }
+
+export interface AdminUserStorageStat {
+  userId: string;
+  email: string;
+  nickname: string;
+  spaceCount: number;
+  photoFileCount: number;
+  referencedPhotoCount: number;
+  storageBytes: number;
+  storageSharePercent: number;
+}
+
+export interface AdminDashboardStats {
+  generatedAt: string;
+  userCount: number;
+  spaceCount: number;
+  photoFileCount: number;
+  photoReferenceCount: number;
+  referencedExistingPhotoCount: number;
+  orphanPhotoFileCount: number;
+  missingPhotoFileCount: number;
+  usedBytes: number;
+  capacityBytes: number;
+  remainingBytes: number;
+  usagePercent: number;
+  perUser: AdminUserStorageStat[];
+}

@@ -1,4 +1,4 @@
-import type {Space, User} from '../types';
+import type {AdminDashboardStats, Space, User} from '../types';
 
 type JsonOptions = Omit<RequestInit, 'body'> & {
   body?: unknown;
@@ -140,4 +140,8 @@ export async function uploadImage(file: File): Promise<string> {
 
   const payload = (await response.json()) as {url: string};
   return payload.url;
+}
+
+export async function fetchAdminDashboard(): Promise<AdminDashboardStats> {
+  return requestJson<AdminDashboardStats>('/api/admin/dashboard');
 }

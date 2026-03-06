@@ -4,6 +4,7 @@ import path from 'node:path';
 import {randomUUID} from 'node:crypto';
 import express from 'express';
 import multer from 'multer';
+import {getAdminDashboardStats} from './admin-dashboard';
 import {UPLOADS_DIR, getUserUploadsDir} from './db';
 import {
   createSpace,
@@ -87,6 +88,24 @@ function extractClientIp(req: express.Request): string {
 
 function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function getAdminEmailAllowList(): string[] {
+  const raw = process.env.ADMIN_EMAILS;
+  if (!raw) return [];
+
+  const emails = raw
+    .split(',')
+    .map((item) => normalizeEmail(item))
+    .filter(Boolean);
+
+  return Array.from(new Set(emails));
+}
+
+function canAccessAdminDashboard(email: string): boolean {
+  const allowList = getAdminEmailAllowList();
+  if (allowList.length === 0) return true;
+  return allowList.includes(normalizeEmail(email));
 }
 
 app.use(express.json({limit: '10mb'}));
@@ -241,6 +260,15 @@ app.get('/api/me', requireAuth, (req, res) => {
   }
 
   res.json(user);
+});
+
+app.get('/api/admin/dashboard', requireAuth, (req, res) => {
+  if (!canAccessAdminDashboard(req.user!.email)) {
+    res.status(403).json({error: 'Forbidden'});
+    return;
+  }
+
+  res.json(getAdminDashboardStats());
 });
 
 app.get('/uploads/:userId/:filename', requireAuth, (req, res) => {
