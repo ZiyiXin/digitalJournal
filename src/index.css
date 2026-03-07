@@ -10,6 +10,50 @@ body {
   color: #2c2c2c;
 }
 
+.timeline-cinema-shell {
+  isolation: isolate;
+}
+
+.timeline-cinema-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  pointer-events: none;
+}
+
+.timeline-cinema-card::after {
+  content: '';
+  position: absolute;
+  left: 20px;
+  right: 20px;
+  bottom: -18px;
+  height: 42px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(255, 154, 98, 0.14), transparent 72%);
+  filter: blur(18px);
+  opacity: 0.58;
+  pointer-events: none;
+  z-index: -1;
+}
+
+@keyframes cinemaOrbPulse {
+  0%,
+  100% {
+    transform: translate(-50%, -50%) scale(0.84);
+    opacity: 0.35;
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.18);
+    opacity: 0.95;
+  }
+}
+
+.cinema-orb {
+  animation: cinemaOrbPulse 3.6s ease-in-out infinite;
+}
+
 .film-strip-v2 {
   position: relative;
   background-color: rgba(26, 26, 26, 0.85);
