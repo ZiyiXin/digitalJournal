@@ -47,7 +47,7 @@ import {
 import type {AdminDashboardStats, AvatarFocus, Space, TimelineEntry, TreeholeEntry, User} from './types';
 
 // --- Themes ---
-export type ThemeName = 'default' | 'anime' | 'scifi' | 'retro' | 'fantasy';
+export type ThemeName = 'default' | 'anime' | 'scifi' | 'retro' | 'fantasy' | 'cinema';
 
 export const THEMES = {
   default: {
@@ -154,6 +154,27 @@ export const THEMES = {
     button: 'bg-gradient-to-r from-fuchsia-500 to-purple-600 hover:from-fuchsia-400 hover:to-purple-500 text-white border-none',
     dotRing: 'ring-[#0F0C29]',
     tape: 'bg-fuchsia-500/20',
+  },
+  cinema: {
+    name: 'cinema',
+    globalBg: 'bg-[#09111A]',
+    headerBg: 'from-[#20354B]/70 via-[#09111A]/90 to-[#09111A]',
+    textMain: 'text-[#F5EBDD]',
+    textMuted: 'text-[#A7B5C4]',
+    accent: 'text-[#FF9A62]',
+    borderAccent: 'border-[#FF9A62]',
+    bgAccent: 'bg-[#FF9A62]',
+    cardBg: 'bg-[#111B26]/78 backdrop-blur-xl',
+    cardBorder: 'border-[#304252] border',
+    cardShadow: 'shadow-[0_18px_44px_rgba(0,0,0,0.38)]',
+    radius: 'rounded-[2rem]',
+    fontMain: 'font-sans',
+    fontTitle: 'font-serif tracking-[0.08em]',
+    imageFilter: 'contrast-110 saturate-90 brightness-[0.95]',
+    navInactive: 'text-[#6E8093] hover:text-[#E9D8C4]',
+    button: 'bg-gradient-to-r from-[#FF9A62] to-[#F4C96B] hover:from-[#FFAE78] hover:to-[#FFD98D] text-[#111827]',
+    dotRing: 'ring-[#09111A]',
+    tape: 'bg-[#FFD8B5]/15',
   }
 };
 
@@ -168,12 +189,40 @@ const MAX_IMAGES_PER_TIMELINE_OR_ALBUM = 30;
 const DEFAULT_AVATAR_FOCUS: AvatarFocus = { x: 50, y: 50, scale: 1 };
 const AVATAR_SCALE_MIN = 1;
 const AVATAR_SCALE_MAX = 3;
+const TIMELINE_COVER_FALLBACK = 'https://images.unsplash.com/photo-1490750967868-88aa4486c946?auto=format&fit=crop&w=800&q=80';
 const clampValue = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 const normalizeAvatarFocus = (focus?: Partial<AvatarFocus>): AvatarFocus => ({
   x: clampValue(Number.isFinite(focus?.x ?? NaN) ? (focus?.x as number) : DEFAULT_AVATAR_FOCUS.x, 0, 100),
   y: clampValue(Number.isFinite(focus?.y ?? NaN) ? (focus?.y as number) : DEFAULT_AVATAR_FOCUS.y, 0, 100),
   scale: clampValue(Number.isFinite(focus?.scale ?? NaN) ? (focus?.scale as number) : DEFAULT_AVATAR_FOCUS.scale, AVATAR_SCALE_MIN, AVATAR_SCALE_MAX),
 });
+const isCinemaTheme = (theme: {name: string}) => theme.name === 'cinema';
+
+function useCoverImageRatio(coverImage: string) {
+  const [coverRatio, setCoverRatio] = useState(1);
+
+  React.useEffect(() => {
+    let active = true;
+    const img = new window.Image();
+    img.onload = () => {
+      if (!active) return;
+      if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+        setCoverRatio(img.naturalWidth / img.naturalHeight);
+      } else {
+        setCoverRatio(1);
+      }
+    };
+    img.onerror = () => {
+      if (active) setCoverRatio(1);
+    };
+    img.src = coverImage;
+    return () => {
+      active = false;
+    };
+  }, [coverImage]);
+
+  return coverRatio;
+}
 
 function getPasswordStrength(input: string): {label: string; score: number} {
   let score = 0;
@@ -843,7 +892,7 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
       </button>
 
       {/* Theme Selector */}
-      <div className="fixed top-6 right-6 z-50 flex gap-3">
+      <div className="fixed top-20 right-6 z-50 flex gap-3">
         <div className="relative group">
           <button className={`flex items-center gap-2 ${theme.cardBg} backdrop-blur-md px-4 py-3 rounded-full cursor-pointer hover:opacity-80 transition-all shadow-sm border ${theme.cardBorder}`}>
             <Palette className={theme.accent} size={20} />
@@ -1237,6 +1286,14 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
 
 // --- Subcomponents ---
 
+type TimelineFolderProps = {
+  entry: TimelineEntry;
+  index: number;
+  onImageClick: (url: string, text?: string) => void;
+  onEditEntry: (entry: TimelineEntry) => void;
+  onDeleteEntry: (entryId: string) => void;
+};
+
 function TimelineView({
   entries,
   onImageClick,
@@ -1249,6 +1306,7 @@ function TimelineView({
   onDeleteEntry: (entryId: string) => void;
 }) {
   const theme = useTheme();
+  const cinemaMode = isCinemaTheme(theme);
   const containerRef = React.useRef<HTMLDivElement>(null);
   const { scrollYProgress } = useScroll({
     target: containerRef,
@@ -1321,77 +1379,126 @@ function TimelineView({
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  const timelineShellClass = cinemaMode ? 'timeline-cinema-shell max-w-[75rem] gap-4 xl:gap-6' : 'max-w-5xl';
+  const railBackgroundClass = cinemaMode ? 'w-px bg-white/10 shadow-[0_0_26px_rgba(255,154,98,0.14)]' : `w-[2px] ${theme.cardBorder}`;
+  const railProgressClass = cinemaMode
+    ? 'w-[3px] bg-gradient-to-b from-[#FF9A62] via-[#F4C96B] to-[#86D7F2] shadow-[0_0_28px_rgba(255,154,98,0.45)]'
+    : `w-[2px] ${theme.bgAccent}`;
+
   return (
-    <div className="relative flex max-w-5xl mx-auto">
-      {/* Floating Time Index (Desktop) */}
-      <div className={`hidden lg:flex flex-col fixed left-8 xl:left-16 top-1/2 -translate-y-1/2 h-fit items-start space-y-6 z-20 transition-opacity duration-500 ${isScrolled ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}>
-        <div className="absolute left-[3px] top-2 bottom-2 w-[1px] bg-pink-100/50 -z-10"></div>
-        {groupedEntries.map((g) => (
-          <button
-            key={g.year}
-            onClick={() => scrollToYear(g.year)}
-            className={`relative flex items-center justify-start gap-4 group transition-all duration-500 ${
-              activeYear === g.year ? 'text-pink-500 scale-110 translate-x-1' : 'text-stone-400 hover:text-pink-300'
-            }`}
-          >
-            <div className={`w-2 h-2 rounded-full transition-all duration-500 ${
-              activeYear === g.year 
-                ? 'bg-pink-400 shadow-[0_0_12px_rgba(244,114,182,0.8)] scale-150' 
-                : 'bg-stone-200 group-hover:bg-pink-200'
-            }`} />
-            <span className={`font-serif tracking-widest transition-all duration-500 ${activeYear === g.year ? 'font-bold text-lg' : 'font-medium text-sm'}`}>
-              {g.year}
-            </span>
-          </button>
-        ))}
+    <div className={`relative mx-auto flex w-full ${timelineShellClass}`}>
+      <div
+        className={`hidden lg:flex flex-col fixed top-1/2 -translate-y-1/2 h-fit items-start z-20 transition-opacity duration-500 ${
+          cinemaMode
+            ? `left-4 xl:left-10 rounded-[28px] border border-white/10 bg-[#0E1823]/72 px-2.5 py-4 shadow-[0_20px_50px_rgba(0,0,0,0.34)] backdrop-blur-xl ${isScrolled ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`
+            : `left-8 xl:left-16 space-y-6 ${isScrolled ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`
+        }`}
+      >
+        {cinemaMode ? (
+          <div className="pointer-events-none absolute inset-0 rounded-[28px] bg-[radial-gradient(circle_at_top,rgba(255,154,98,0.15),transparent_48%),linear-gradient(180deg,rgba(255,255,255,0.04),transparent)]" />
+        ) : (
+          <div className="absolute left-[3px] top-2 bottom-2 w-[1px] bg-pink-100/50 -z-10"></div>
+        )}
+        <div className={`relative flex flex-col ${cinemaMode ? 'gap-2' : 'space-y-6'}`}>
+          {groupedEntries.map((g) => (
+            <button
+              key={g.year}
+              onClick={() => scrollToYear(g.year)}
+              className={`relative flex items-center justify-start group transition-all duration-500 ${
+                cinemaMode
+                  ? `gap-3 rounded-full px-3 py-2 ${
+                      activeYear === g.year
+                        ? 'translate-x-1 bg-white/8 text-[#FFE4CC]'
+                        : 'text-[#6E8093] hover:text-[#FFD5B1]'
+                    }`
+                  : `gap-4 ${activeYear === g.year ? 'text-pink-500 scale-110 translate-x-1' : 'text-stone-400 hover:text-pink-300'}`
+              }`}
+            >
+              <div
+                className={`rounded-full transition-all duration-500 ${
+                  cinemaMode
+                    ? activeYear === g.year
+                      ? 'h-2.5 w-2.5 bg-[#FF9A62] shadow-[0_0_12px_rgba(255,154,98,0.8)]'
+                      : 'h-2 w-2 bg-white/25 group-hover:bg-[#FFD5B1]'
+                    : activeYear === g.year
+                      ? 'w-2 h-2 bg-pink-400 shadow-[0_0_12px_rgba(244,114,182,0.8)] scale-150'
+                      : 'w-2 h-2 bg-stone-200 group-hover:bg-pink-200'
+                }`}
+              />
+              <span
+                className={`transition-all duration-500 ${
+                  cinemaMode
+                    ? activeYear === g.year
+                      ? 'font-serif text-base tracking-[0.18em]'
+                      : 'font-medium text-sm tracking-[0.18em]'
+                    : `font-serif tracking-widest ${activeYear === g.year ? 'font-bold text-lg' : 'font-medium text-sm'}`
+                }`}
+              >
+                {g.year}
+              </span>
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* Timeline Content */}
-      <div ref={containerRef} className="flex-1 relative max-w-3xl mx-auto w-full">
-        {/* Main Vertical Line Background */}
-        <div className={`absolute left-[14px] md:left-1/2 top-0 bottom-0 w-[2px] ${theme.cardBorder} md:-translate-x-1/2 rounded-full`}></div>
-        {/* Main Vertical Line Progress */}
-        <motion.div 
-          className={`absolute left-[14px] md:left-1/2 top-0 bottom-0 w-[2px] ${theme.bgAccent} md:-translate-x-1/2 rounded-full origin-top`}
+      <div ref={containerRef} className={`relative mx-auto w-full flex-1 ${cinemaMode ? 'max-w-[70rem]' : 'max-w-3xl'}`}>
+        {cinemaMode && (
+          <>
+            <div className="pointer-events-none absolute inset-x-[18%] top-8 bottom-8 -z-10 rounded-full bg-[radial-gradient(circle_at_center,rgba(255,154,98,0.12),transparent_62%)] blur-3xl" />
+            <div className="pointer-events-none absolute left-[14px] md:left-1/2 top-0 bottom-0 w-[92px] md:w-[180px] -translate-x-1/2 -z-10 bg-[radial-gradient(circle_at_center,rgba(255,154,98,0.1),transparent_65%)] blur-[52px]" />
+          </>
+        )}
+        <div className={`absolute left-[14px] md:left-1/2 top-0 bottom-0 ${railBackgroundClass} md:-translate-x-1/2 rounded-full`}></div>
+        <motion.div
+          className={`absolute left-[14px] md:left-1/2 top-0 bottom-0 ${railProgressClass} md:-translate-x-1/2 rounded-full origin-top`}
           style={{ scaleY }}
         />
         
-        <div className="space-y-10">
+        <div className={cinemaMode ? 'space-y-4' : 'space-y-7'}>
           {groupedEntries.map((group) => (
             <div key={group.year} id={`year-${group.year}`} className="relative scroll-mt-32">
-              {/* Year Marker */}
               <motion.div
                 initial={{ opacity: 0, scale: 0.8, y: 20 }}
                 whileInView={{ opacity: 1, scale: 1, y: 0 }}
                 viewport={{ once: true, margin: "-100px" }}
                 transition={{ duration: 0.6, type: "spring" }}
-                className="flex items-center justify-center mb-6 relative z-10"
+                className={`relative z-10 flex items-center justify-center ${cinemaMode ? 'mb-3' : 'mb-4'}`}
               >
-                <div className={`${theme.cardBg} backdrop-blur-md px-8 py-2.5 rounded-full border ${theme.cardBorder} shadow-[0_3px_14px_rgba(244,114,182,0.1)] ${theme.accent} font-serif font-bold text-xl tracking-[0.18em] flex items-center justify-center`}>
-                  {group.year}
-                </div>
+                {cinemaMode ? (
+                  <div className="relative flex items-center gap-4 px-2 py-1">
+                    <span className="text-[10px] uppercase tracking-[0.42em] text-[#8BA0B4]">Archive</span>
+                    <span className="font-serif text-xl tracking-[0.26em] text-[#FFE4CC] [text-shadow:0_0_10px_rgba(255,154,98,0.25)]">
+                      {group.year}
+                    </span>
+                  </div>
+                ) : (
+                  <div className={`${theme.cardBg} backdrop-blur-md px-8 py-2.5 rounded-full border ${theme.cardBorder} shadow-[0_3px_14px_rgba(244,114,182,0.1)] ${theme.accent} font-serif font-bold text-xl tracking-[0.18em] flex items-center justify-center`}>
+                    {group.year}
+                  </div>
+                )}
               </motion.div>
 
-              <div className="space-y-3">
-                {group.entries.map((entry, index) => {
+              <div className={cinemaMode ? 'space-y-2.5' : 'space-y-2'}>
+                {group.entries.map((entry) => {
                   const globalIndex = entries.findIndex(e => e.id === entry.id);
                   return (
-                  <motion.div
-                    key={entry.id}
-                    initial={{ opacity: 0, y: 80, scale: 0.95, rotate: globalIndex % 2 === 0 ? -2 : 2 }}
-                    whileInView={{ opacity: 1, y: 0, scale: 1, rotate: 0 }}
-                    viewport={{ once: true, margin: "-100px" }}
-                    transition={{ duration: 0.8, type: "spring", bounce: 0.4 }}
-                  >
-                    <TimelineFolder 
-                      entry={entry} 
-                      index={globalIndex} 
-                      onImageClick={onImageClick}
-                      onEditEntry={onEditEntry}
-                      onDeleteEntry={onDeleteEntry}
-                    />
-                  </motion.div>
-                )})}
+                    <motion.div
+                      key={entry.id}
+                      initial={{ opacity: 0, y: cinemaMode ? 34 : 56, scale: 0.95, rotate: globalIndex % 2 === 0 ? -2 : 2 }}
+                      whileInView={{ opacity: 1, y: 0, scale: 1, rotate: 0 }}
+                      viewport={{ once: true, margin: "-100px" }}
+                      transition={{ duration: cinemaMode ? 0.62 : 0.8, type: "spring", bounce: cinemaMode ? 0.28 : 0.4 }}
+                    >
+                      <TimelineFolder 
+                        entry={entry} 
+                        index={globalIndex} 
+                        onImageClick={onImageClick}
+                        onEditEntry={onEditEntry}
+                        onDeleteEntry={onDeleteEntry}
+                      />
+                    </motion.div>
+                  );
+                })}
               </div>
             </div>
           ))}
@@ -1401,78 +1508,57 @@ function TimelineView({
   );
 }
 
-function TimelineFolder({
+function TimelineFolder(props: TimelineFolderProps) {
+  const theme = useTheme();
+  if (isCinemaTheme(theme)) {
+    return <TimelineFolderCinema {...props} />;
+  }
+  return <TimelineFolderClassic {...props} />;
+}
+
+function TimelineFolderClassic({
   entry,
   index,
   onImageClick,
   onEditEntry,
   onDeleteEntry,
-}: {
-  entry: TimelineEntry;
-  index: number;
-  onImageClick: (url: string, text?: string) => void;
-  onEditEntry: (entry: TimelineEntry) => void;
-  onDeleteEntry: (entryId: string) => void;
-}) {
+}: TimelineFolderProps) {
   const theme = useTheme();
   const [isExpanded, setIsExpanded] = useState(false);
   const isEven = index % 2 === 0;
-  const [coverRatio, setCoverRatio] = useState(1);
-  const coverImage = entry.images.length > 0 ? entry.images[0].imageUrl : 'https://images.unsplash.com/photo-1490750967868-88aa4486c946?auto=format&fit=crop&w=800&q=80';
-  const relatedImages = entry.images.slice(1);
-
-  React.useEffect(() => {
-    let active = true;
-    const img = new window.Image();
-    img.onload = () => {
-      if (!active) return;
-      if (img.naturalWidth > 0 && img.naturalHeight > 0) {
-        setCoverRatio(img.naturalWidth / img.naturalHeight);
-      } else {
-        setCoverRatio(1);
-      }
-    };
-    img.onerror = () => {
-      if (active) setCoverRatio(1);
-    };
-    img.src = coverImage;
-    return () => {
-      active = false;
-    };
-  }, [coverImage]);
+  const coverImage = entry.images.length > 0 ? entry.images[0].imageUrl : TIMELINE_COVER_FALLBACK;
+  const expandedImages = entry.images;
+  const ExpandArrowIcon = isExpanded ? (isEven ? ChevronRight : ChevronLeft) : ChevronDown;
+  const coverRatio = useCoverImageRatio(coverImage);
 
   const cardWidth = React.useMemo(() => {
     const ratio = Number.isFinite(coverRatio) && coverRatio > 0 ? coverRatio : 1;
     const imageWidth =
       ratio >= 1
-        ? Math.min(292, 188 + (ratio - 1) * 92)
-        : Math.max(136, 188 * ratio);
-    return Math.round(Math.min(316, Math.max(164, imageWidth + 28)));
+        ? Math.min(276, 172 + (ratio - 1) * 74)
+        : Math.max(124, 172 * ratio);
+    return Math.round(Math.min(296, Math.max(156, imageWidth + 24)));
   }, [coverRatio]);
 
   return (
-    <div className="relative w-full mb-1">
+    <div className="relative w-full mb-0.5">
       <div className={`relative flex flex-col md:flex-row items-start ${isEven ? 'md:flex-row-reverse' : ''}`}>
         <motion.div 
           initial={{ scale: 0 }}
           whileInView={{ scale: 1 }}
           viewport={{ once: true, margin: "-100px" }}
           transition={{ duration: 0.5, delay: 0.2, type: "spring" }}
-          className={`absolute left-[9px] md:left-1/2 w-[10px] h-[10px] rounded-full ${theme.bgAccent} md:-translate-x-1/2 mt-5 ring-4 ${theme.dotRing} shadow-sm z-10`}
+          className={`absolute left-[9px] md:left-1/2 w-[9px] h-[9px] rounded-full ${theme.bgAccent} md:-translate-x-1/2 mt-4 ring-4 ${theme.dotRing} shadow-sm z-10`}
         ></motion.div>
 
-        <div className={`ml-12 md:ml-0 md:w-1/2 ${isEven ? 'md:pl-12' : 'md:pr-12'} py-0.5 flex ${isEven ? 'justify-start' : 'justify-end'}`}>
-          
-          {/* Clipping/Note Container */}
+        <div className={`ml-12 md:ml-0 md:w-1/2 ${isEven ? 'md:pl-9' : 'md:pr-9'} py-0.5 flex ${isEven ? 'justify-start' : 'justify-end'}`}>
           <div
             className="relative w-full group"
-            style={{ width: `${cardWidth}px`, maxWidth: 'calc(100vw - 5.5rem)' }}
+            style={{ width: `${cardWidth}px`, maxWidth: 'calc(100vw - 4.75rem)' }}
           >
-            {/* Washi Tape */}
-            <div className={`absolute -top-3 ${isEven ? 'right-8 rotate-[4deg]' : 'left-8 rotate-[-3deg]'} w-16 h-6 ${theme.tape} backdrop-blur-sm z-30 mix-blend-multiply shadow-sm transition-transform duration-300 group-hover:-translate-y-1`}></div>
+            <div className={`absolute -top-2.5 ${isEven ? 'right-7 rotate-[4deg]' : 'left-7 rotate-[-3deg]'} w-14 h-5 ${theme.tape} backdrop-blur-sm z-30 mix-blend-multiply shadow-sm transition-transform duration-300 group-hover:-translate-y-1`}></div>
             
-            {/* Main Card (The "Envelope") */}
-            <div className={`relative ${theme.cardBg} p-3.5 shadow-sm border ${theme.cardBorder} transition-all duration-300 w-full hover:shadow-md hover:-translate-y-0.5 z-20`}>
+            <div className={`relative ${theme.cardBg} p-3 shadow-sm border ${theme.cardBorder} transition-all duration-300 w-full hover:shadow-md hover:-translate-y-0.5 z-20`}>
               <div className="absolute top-3 right-3 z-30 flex items-center gap-1 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto transition-opacity">
                 <button
                   type="button"
@@ -1496,7 +1582,6 @@ function TimelineFolder({
                 </button>
               </div>
               
-              {/* Clickable Header/Cover Area */}
               <div className="cursor-pointer" onClick={() => setIsExpanded(!isExpanded)}>
                 <div className="overflow-hidden relative">
                   <SafeImage
@@ -1511,15 +1596,18 @@ function TimelineFolder({
                   )}
                 </div>
                 
-                <div className="mt-3 text-left relative">
-                  <div className="flex items-center justify-between mb-2">
+                <div className="mt-2.5 text-left relative">
+                  <div className="flex items-center justify-between mb-1.5">
                     <span className={`font-mono ${theme.textMuted} text-[9px] tracking-[0.18em] uppercase`}>{entry.date}</span>
                     {entry.images.length > 0 && (
-                      <motion.div 
-                        animate={{ rotate: isExpanded ? 90 : 0 }} 
+                      <motion.div
+                        key={isExpanded ? `${entry.id}-${isEven ? 'expanded-right' : 'expanded-left'}` : `${entry.id}-collapsed`}
+                        initial={{ opacity: 0.45, scale: 0.8 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ duration: 0.2 }}
                         className={theme.textMuted}
                       >
-                        <ChevronRight size={12} />
+                        <ExpandArrowIcon size={12} />
                       </motion.div>
                     )}
                   </div>
@@ -1527,7 +1615,6 @@ function TimelineFolder({
                 </div>
               </div>
 
-              {/* Description expands inside the card */}
               <AnimatePresence>
                 {entry.description && (
                   <motion.div
@@ -1546,36 +1633,230 @@ function TimelineFolder({
             </div>
 
             <AnimatePresence>
-              {isExpanded && relatedImages.length > 0 && (
+              {isExpanded && expandedImages.length > 0 && (
                 <motion.div
-                  initial={{ opacity: 0, x: isEven ? 24 : -24 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: isEven ? 24 : -24 }}
+                  initial={{ opacity: 0, x: isEven ? 22 : -22, y: 8 }}
+                  animate={{ opacity: 1, x: 0, y: 0 }}
+                  exit={{ opacity: 0, x: isEven ? 22 : -22, y: 8 }}
                   transition={{ duration: 0.28 }}
-                  className="hidden md:flex absolute top-2 w-28 flex-col gap-2.5 z-0"
-                  style={isEven ? { left: 'calc(100% + 0.75rem)' } : { right: 'calc(100% + 0.75rem)' }}
+                  className={`hide-scrollbar mt-2.5 flex max-h-[23rem] w-full flex-col gap-2 overflow-y-auto pr-1 md:mt-0 md:absolute md:top-2 md:w-32 md:z-0 ${
+                    isEven ? 'md:left-[calc(100%+0.65rem)]' : 'md:right-[calc(100%+0.65rem)]'
+                  }`}
                 >
-                  {relatedImages.slice(0, 4).map((img) => (
+                  {expandedImages.map((img) => (
                     <button
                       key={img.id}
                       type="button"
                       onClick={() => onImageClick(img.imageUrl, img.text)}
-                      className={`w-full border ${theme.cardBorder} ${theme.cardBg} shadow-sm overflow-hidden`}
+                      className={`group/photo relative w-full shrink-0 border ${theme.cardBorder} ${theme.cardBg} shadow-sm overflow-hidden`}
                     >
                       <SafeImage src={img.imageUrl} className={`w-full aspect-[4/5] object-cover ${theme.imageFilter}`} />
+                      {img.text?.trim() && (
+                        <>
+                          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-black/80 to-transparent opacity-0 transition-opacity duration-200 group-hover/photo:opacity-100" />
+                          <p className="pointer-events-none absolute inset-x-2 bottom-1.5 text-left text-[10px] leading-tight text-white opacity-0 transition-opacity duration-200 line-clamp-3 group-hover/photo:opacity-100">
+                            {img.text}
+                          </p>
+                        </>
+                      )}
                     </button>
                   ))}
-                  {relatedImages.length > 4 && (
-                    <div className={`text-center text-[11px] ${theme.textMuted} ${theme.cardBg} border ${theme.cardBorder} py-1.5`}>
-                      +{relatedImages.length - 4} 张
-                    </div>
-                  )}
                 </motion.div>
               )}
             </AnimatePresence>
 
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function TimelineFolderCinema({
+  entry,
+  index,
+  onImageClick,
+  onEditEntry,
+  onDeleteEntry,
+}: TimelineFolderProps) {
+  const theme = useTheme();
+  const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const isEven = index % 2 === 0;
+  const hasImages = entry.images.length > 0;
+  const activeImage = hasImages ? entry.images[activeImageIndex] ?? entry.images[0] : null;
+  const coverFocus = entry.coverFocus ?? { x: 50, y: 42 };
+  const previewImages = entry.images.slice(0, 4);
+  const previewImageUrl = activeImage?.imageUrl ?? entry.images[0]?.imageUrl ?? TIMELINE_COVER_FALLBACK;
+  const previewFrameRatio = useCoverImageRatio(previewImageUrl);
+  const cardLaneClass = isEven ? 'md:col-start-3 md:justify-self-start' : 'md:col-start-1 md:justify-self-end';
+  const eventSummary = entry.description?.trim() ?? '';
+  const frameSummary = activeImage?.text?.trim() ?? '';
+  const safePreviewRatio = Number.isFinite(previewFrameRatio) && previewFrameRatio > 0 ? previewFrameRatio : 1;
+  const visualPreviewRatio = React.useMemo(
+    () => Math.min(1.35, Math.max(0.82, safePreviewRatio)),
+    [safePreviewRatio],
+  );
+  const previewWidth = React.useMemo(() => {
+    if (visualPreviewRatio >= 1.2) return '12.75rem';
+    if (visualPreviewRatio >= 0.98) return '11.75rem';
+    return '10.75rem';
+  }, [visualPreviewRatio]);
+  const previewGridStyle = {
+    '--timeline-preview-width': previewWidth,
+  } as React.CSSProperties;
+  const previewFrameStyle = { aspectRatio: `${visualPreviewRatio}` } as React.CSSProperties;
+  const cardMaxWidthClass =
+    visualPreviewRatio >= 1.2 ? 'max-w-[30.5rem]' :
+    visualPreviewRatio >= 0.95 ? 'max-w-[29.5rem]' :
+    'max-w-[28rem]';
+  const previewObjectPosition = activeImageIndex === 0 ? `${coverFocus.x}% ${coverFocus.y}%` : '50% 50%';
+
+  React.useEffect(() => {
+    setActiveImageIndex(0);
+  }, [entry.id]);
+
+  return (
+    <div className="relative w-full">
+      <div className="relative grid gap-2.5 pl-10 md:grid-cols-[minmax(0,1fr)_74px_minmax(0,1fr)] md:pl-0">
+        <motion.div
+          initial={{ scale: 0.6, opacity: 0 }}
+          whileInView={{ scale: 1, opacity: 1 }}
+          viewport={{ once: true, margin: "-100px" }}
+          transition={{ duration: 0.48, delay: 0.12, type: "spring" }}
+          className="absolute left-[8px] top-10 z-20 md:left-1/2 md:-translate-x-1/2"
+        >
+          <span className="cinema-orb absolute left-1/2 top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#FF9A62]/28 blur-xl"></span>
+          <span className={`relative block h-3.5 w-3.5 rounded-full ${theme.bgAccent} ring-4 ${theme.dotRing} shadow-[0_0_18px_rgba(255,154,98,0.52)]`}></span>
+        </motion.div>
+
+        <div className={`min-w-0 ${cardLaneClass}`}>
+          <div className={`w-full ${cardMaxWidthClass}`}>
+            <div className="relative group">
+              <div className={`timeline-cinema-card relative overflow-hidden rounded-[28px] border ${theme.cardBorder} ${theme.cardBg} ${theme.cardShadow}`}>
+                <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,154,98,0.13),transparent_40%),linear-gradient(180deg,rgba(255,255,255,0.04),transparent_46%)]" />
+                <div className="relative p-3.5">
+                  <div className="flex items-start justify-between gap-2.5">
+                    <div className="min-w-0">
+                      <p className="text-[10px] uppercase tracking-[0.38em] text-[#8AA0B3]">{entry.date}</p>
+                      <h3 className={`${theme.fontTitle} mt-1.5 text-[1.45rem] leading-tight text-[#FFF0E0] md:text-[1.7rem]`}>{entry.title}</h3>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onEditEntry(entry);
+                        }}
+                        className="rounded-full border border-white/10 bg-white/8 p-2 text-[#FFD8BF] transition-colors hover:bg-white/14"
+                      >
+                        <Pencil size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeleteEntry(entry.id);
+                        }}
+                        className="rounded-full border border-white/10 bg-white/8 p-2 text-[#FFD8BF] transition-colors hover:bg-white/14"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div
+                    className="mt-2.5 grid grid-cols-1 gap-2.5 sm:items-start sm:[grid-template-columns:var(--timeline-preview-width)_minmax(0,1fr)]"
+                    style={previewGridStyle}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (activeImage) onImageClick(activeImage.imageUrl, activeImage.text);
+                      }}
+                      className="relative overflow-hidden rounded-[24px] border border-white/10 bg-[#0C1520] shadow-[0_14px_30px_rgba(0,0,0,0.24)] transition-[aspect-ratio] duration-300"
+                      style={previewFrameStyle}
+                    >
+                      {hasImages ? (
+                        <>
+                          <SafeImage
+                            src={previewImageUrl}
+                            alt={entry.title}
+                            className={`absolute inset-0 h-full w-full scale-110 object-cover blur-xl opacity-50 ${theme.imageFilter}`}
+                            style={{ objectPosition: previewObjectPosition }}
+                          />
+                          <div className="absolute inset-0 bg-black/24" />
+                          <SafeImage
+                            src={previewImageUrl}
+                            alt={entry.title}
+                            className={`relative z-10 h-full w-full object-contain transition-transform duration-700 group-hover:scale-[1.02] ${theme.imageFilter}`}
+                            style={{ objectPosition: previewObjectPosition }}
+                          />
+                        </>
+                      ) : (
+                        <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-[radial-gradient(circle_at_top,rgba(255,154,98,0.16),transparent_40%),linear-gradient(180deg,#0D1823,#0A1118)] text-[#FFE4CC]">
+                          <Images size={30} className="opacity-80" />
+                          <span className="text-xs uppercase tracking-[0.34em] text-[#A7B5C4]">No Photo Yet</span>
+                        </div>
+                      )}
+                      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/70 to-transparent" />
+                      <div className="absolute bottom-3 left-3 flex flex-wrap gap-2">
+                        <span className="rounded-full border border-white/12 bg-black/35 px-2.5 py-1 text-[10px] tracking-[0.16em] text-[#FFE4CC] backdrop-blur-md">
+                          {hasImages ? `${entry.images.length} 张照片` : '文字档案'}
+                        </span>
+                      </div>
+                    </button>
+
+                    <div className="flex min-w-0 flex-col gap-2.5">
+                      {eventSummary && (
+                        <div className="min-w-0">
+                          <p className="text-[10px] uppercase tracking-[0.28em] text-[#7E93A6]">Event</p>
+                          <p className="mt-1 text-[14px] leading-6 text-[#A7B5C4] line-clamp-3">
+                            {eventSummary}
+                          </p>
+                        </div>
+                      )}
+
+                      {previewImages.length > 1 && (
+                        <div className="hide-scrollbar flex gap-2 overflow-x-auto pb-1">
+                          {previewImages.map((img, previewIndex) => (
+                            <button
+                              key={img.id}
+                              type="button"
+                              onClick={() => setActiveImageIndex(previewIndex)}
+                              className={`relative shrink-0 overflow-hidden rounded-[16px] border transition-all duration-300 ${
+                                previewIndex === activeImageIndex
+                                  ? 'border-[#FF9A62] bg-[#182433] shadow-[0_0_0_1px_rgba(255,154,98,0.28)]'
+                                  : 'border-white/10 bg-[#101923] hover:border-white/30'
+                              }`}
+                            >
+                              <SafeImage src={img.imageUrl} className={`h-14 w-14 object-cover ${theme.imageFilter}`} />
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      {frameSummary && (
+                        <div className="min-w-0 border-t border-white/10 pt-2">
+                          <p className="text-[10px] uppercase tracking-[0.28em] text-[#7E93A6]">Photo Note</p>
+                          <p className="mt-1 text-[13px] leading-5 text-[#DCCCBD] line-clamp-3">
+                            {frameSummary}
+                          </p>
+                        </div>
+                      )}
+
+                      {!eventSummary && !frameSummary && (
+                        <p className="text-sm leading-6 text-[#6E8093]">
+                          这条记录还没有补充描述。
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
       </div>
     </div>
   );
