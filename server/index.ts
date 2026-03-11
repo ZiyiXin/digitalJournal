@@ -337,6 +337,7 @@ app.post('/api/spaces', requireAuth, (req, res) => {
     avatarImage: payload.avatarImage,
     heroImage: payload.heroImage,
     description: payload.description,
+    infoCapsules: payload.infoCapsules,
     visibility: 'private',
   });
   res.status(201).json(created);

@@ -96,7 +96,7 @@ export async function createSpace(payload: {
 
 export async function updateSpaceMeta(
   id: string,
-  payload: Partial<Pick<Space, 'name' | 'avatarImage' | 'heroImage' | 'description'>>,
+  payload: Partial<Pick<Space, 'name' | 'avatarImage' | 'heroImage' | 'description' | 'infoCapsules'>>,
 ): Promise<Space> {
   return requestJson<Space>(`/api/spaces/${id}`, {
     method: 'PUT',

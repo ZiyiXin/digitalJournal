@@ -7,6 +7,7 @@ import {hashPassword} from './auth/password';
 const DATA_DIR = path.resolve(process.cwd(), 'data');
 export const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
 const DB_PATH = path.join(DATA_DIR, 'digital-journal.db');
+const DEFAULT_INFO_CAPSULES_JSON = '[{"id":"default-date","type":"date","label":"日期","value":"1997-10-14"},{"id":"default-zodiac","type":"zodiac","label":"星座","value":"天秤座"},{"id":"default-location","type":"location","label":"地点","value":"重庆市"}]';
 
 fs.mkdirSync(DATA_DIR, {recursive: true});
 fs.mkdirSync(UPLOADS_DIR, {recursive: true});
@@ -50,6 +51,7 @@ db.exec(`
     hero_image TEXT NOT NULL,
     visibility TEXT NOT NULL DEFAULT 'private',
     description TEXT NOT NULL DEFAULT '',
+    info_capsules TEXT NOT NULL DEFAULT '${DEFAULT_INFO_CAPSULES_JSON}',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
@@ -110,6 +112,7 @@ ensureColumn('spaces', 'avatar_y', 'REAL NOT NULL DEFAULT 50');
 ensureColumn('spaces', 'avatar_scale', 'REAL NOT NULL DEFAULT 1');
 ensureColumn('spaces', 'owner_id', "TEXT NOT NULL DEFAULT ''");
 ensureColumn('spaces', 'visibility', "TEXT NOT NULL DEFAULT 'private'");
+ensureColumn('spaces', 'info_capsules', `TEXT NOT NULL DEFAULT '${DEFAULT_INFO_CAPSULES_JSON}'`);
 ensureColumn('timeline_entries', 'owner_id', "TEXT NOT NULL DEFAULT ''");
 ensureColumn('timeline_images', 'owner_id', "TEXT NOT NULL DEFAULT ''");
 ensureColumn('treehole_entries', 'owner_id', "TEXT NOT NULL DEFAULT ''");
