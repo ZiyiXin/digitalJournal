@@ -3,6 +3,8 @@ import {db} from './db';
 import {canEditSpace, canViewSpace} from './authz';
 import type {
   CreateSpaceInput,
+  InfoCapsule,
+  InfoCapsuleType,
   Space,
   SpaceVisibility,
   TimelineEntry,
@@ -22,6 +24,7 @@ type SpaceRow = {
   hero_image: string;
   visibility: SpaceVisibility;
   description: string;
+  info_capsules: string;
 };
 
 type TimelineJoinRow = {
@@ -47,6 +50,26 @@ type TreeholeRow = {
 };
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+const INFO_CAPSULE_TYPES: InfoCapsuleType[] = ['date', 'zodiac', 'location', 'custom'];
+const DEFAULT_INFO_CAPSULES: InfoCapsule[] = [
+  { id: 'default-date', type: 'date', label: '日期', value: '1997-10-14' },
+  { id: 'default-zodiac', type: 'zodiac', label: '星座', value: '天秤座' },
+  { id: 'default-location', type: 'location', label: '地点', value: '重庆市' },
+];
+const MAX_INFO_CAPSULES = 24;
+
+function defaultCapsuleLabel(type: InfoCapsuleType): string {
+  switch (type) {
+    case 'date':
+      return '日期';
+    case 'zodiac':
+      return '星座';
+    case 'location':
+      return '地点';
+    default:
+      return '自定义';
+  }
+}
 
 function normalizeAvatarFocus(x: number, y: number, scale: number) {
   return {
@@ -60,6 +83,54 @@ function normalizeVisibility(_visibility?: SpaceVisibility): SpaceVisibility {
   return 'private';
 }
 
+function normalizeInfoCapsuleType(value: unknown): InfoCapsuleType {
+  if (typeof value !== 'string') return 'custom';
+  return INFO_CAPSULE_TYPES.includes(value as InfoCapsuleType) ? (value as InfoCapsuleType) : 'custom';
+}
+
+function normalizeInfoCapsules(input: unknown): InfoCapsule[] {
+  if (!Array.isArray(input)) {
+    return DEFAULT_INFO_CAPSULES.map((capsule) => ({ ...capsule }));
+  }
+
+  const normalized = input
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null;
+      const capsule = item as Partial<InfoCapsule>;
+      const type = normalizeInfoCapsuleType(capsule.type);
+      const label = typeof capsule.label === 'string' && capsule.label.trim() ? capsule.label.trim().slice(0, 20) : defaultCapsuleLabel(type);
+      const value = typeof capsule.value === 'string' ? capsule.value.trim().slice(0, 120) : '';
+      if (!label && !value) return null;
+      const id =
+        typeof capsule.id === 'string' && capsule.id.trim()
+          ? capsule.id.trim().slice(0, 64)
+          : `capsule-${randomUUID()}`;
+      return {
+        id,
+        type,
+        label,
+        value,
+      };
+    })
+    .filter((item): item is InfoCapsule => item !== null)
+    .slice(0, MAX_INFO_CAPSULES);
+  return normalized;
+}
+
+function parseInfoCapsules(raw: string): InfoCapsule[] {
+  if (!raw) return DEFAULT_INFO_CAPSULES.map((capsule) => ({ ...capsule }));
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return normalizeInfoCapsules(parsed);
+  } catch {
+    return DEFAULT_INFO_CAPSULES.map((capsule) => ({ ...capsule }));
+  }
+}
+
+function serializeInfoCapsules(capsules: unknown): string {
+  return JSON.stringify(normalizeInfoCapsules(capsules));
+}
+
 function mapSpace(row: SpaceRow, entries: TimelineEntry[], treeholeEntries: TreeholeEntry[]): Space {
   return {
     id: row.id,
@@ -69,6 +140,7 @@ function mapSpace(row: SpaceRow, entries: TimelineEntry[], treeholeEntries: Tree
     heroImage: row.hero_image,
     visibility: normalizeVisibility(row.visibility),
     description: row.description,
+    infoCapsules: parseInfoCapsules(row.info_capsules),
     entries,
     treeholeEntries,
   };
@@ -159,7 +231,7 @@ export function listSpaces(ownerId: string): Space[] {
   const rows = db
     .prepare(
       `
-      SELECT id, owner_id, name, avatar_image, avatar_x, avatar_y, avatar_scale, hero_image, visibility, description
+      SELECT id, owner_id, name, avatar_image, avatar_x, avatar_y, avatar_scale, hero_image, visibility, description, info_capsules
       FROM spaces
       WHERE owner_id = ?
       ORDER BY created_at ASC
@@ -174,7 +246,7 @@ export function getSpaceById(spaceId: string, ownerId: string): Space | null {
   const row = db
     .prepare(
       `
-      SELECT id, owner_id, name, avatar_image, avatar_x, avatar_y, avatar_scale, hero_image, visibility, description
+      SELECT id, owner_id, name, avatar_image, avatar_x, avatar_y, avatar_scale, hero_image, visibility, description, info_capsules
       FROM spaces
       WHERE id = ? AND owner_id = ?
     `,
@@ -203,9 +275,10 @@ export function createSpace(ownerId: string, input: CreateSpaceInput): Space {
         avatar_scale,
         hero_image,
         visibility,
-        description
+        description,
+        info_capsules
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
   ).run(
     id,
@@ -218,6 +291,7 @@ export function createSpace(ownerId: string, input: CreateSpaceInput): Space {
     input.heroImage ?? 'https://images.unsplash.com/photo-1518599904199-0ca897819ddb?auto=format&fit=crop&w=2000&q=80',
     normalizeVisibility(input.visibility),
     input.description ?? '记录每一个闪光瞬间。',
+    serializeInfoCapsules(input.infoCapsules),
   );
 
   return getSpaceById(id, ownerId)!;
@@ -226,7 +300,7 @@ export function createSpace(ownerId: string, input: CreateSpaceInput): Space {
 export function updateSpaceMeta(
   spaceId: string,
   ownerId: string,
-  input: Partial<Pick<Space, 'name' | 'avatarImage' | 'avatarFocus' | 'heroImage' | 'description' | 'visibility'>>,
+  input: Partial<Pick<Space, 'name' | 'avatarImage' | 'avatarFocus' | 'heroImage' | 'description' | 'infoCapsules' | 'visibility'>>,
 ): Space | null {
   const current = getSpaceById(spaceId, ownerId);
   if (!current) return null;
@@ -243,6 +317,7 @@ export function updateSpaceMeta(
         hero_image = ?,
         visibility = ?,
         description = ?,
+        info_capsules = ?,
         updated_at = datetime('now')
       WHERE id = ? AND owner_id = ?
     `,
@@ -255,6 +330,7 @@ export function updateSpaceMeta(
     input.heroImage ?? current.heroImage,
     normalizeVisibility(input.visibility ?? current.visibility),
     input.description ?? current.description,
+    serializeInfoCapsules(input.infoCapsules ?? current.infoCapsules),
     spaceId,
     ownerId,
   );
@@ -289,9 +365,10 @@ const saveSpaceSnapshotTx = db.transaction((space: Space, ownerId: string) => {
         avatar_scale,
         hero_image,
         visibility,
-        description
+        description,
+        info_capsules
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         name = excluded.name,
         avatar_image = excluded.avatar_image,
@@ -301,6 +378,7 @@ const saveSpaceSnapshotTx = db.transaction((space: Space, ownerId: string) => {
         hero_image = excluded.hero_image,
         visibility = excluded.visibility,
         description = excluded.description,
+        info_capsules = excluded.info_capsules,
         updated_at = datetime('now')
       WHERE spaces.owner_id = excluded.owner_id
     `,
@@ -315,6 +393,7 @@ const saveSpaceSnapshotTx = db.transaction((space: Space, ownerId: string) => {
     space.heroImage,
     normalizeVisibility(space.visibility),
     space.description,
+    serializeInfoCapsules(space.infoCapsules),
   );
 
   db.prepare(

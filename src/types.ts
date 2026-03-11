@@ -1,5 +1,6 @@
 export type TimelineEntryType = 'timeline' | 'album' | 'loose_photo';
 export type SpaceVisibility = 'private' | 'public' | 'friends' | 'custom';
+export type InfoCapsuleType = 'date' | 'zodiac' | 'location' | 'custom';
 
 export interface TimelineImage {
   id: string;
@@ -37,6 +38,13 @@ export interface TreeholeEntry {
   rotation: number;
 }
 
+export interface InfoCapsule {
+  id: string;
+  type: InfoCapsuleType;
+  label: string;
+  value: string;
+}
+
 export interface Space {
   id: string;
   name: string;
@@ -44,6 +52,7 @@ export interface Space {
   avatarFocus: AvatarFocus;
   heroImage: string;
   description: string;
+  infoCapsules: InfoCapsule[];
   visibility?: SpaceVisibility;
   entries: TimelineEntry[];
   treeholeEntries: TreeholeEntry[];

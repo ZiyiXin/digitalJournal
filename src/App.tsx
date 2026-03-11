@@ -44,7 +44,16 @@ import {
   updateSpaceMeta,
   uploadImage,
 } from './lib/api';
-import type {AdminDashboardStats, AvatarFocus, Space, TimelineEntry, TreeholeEntry, User} from './types';
+import type {
+  AdminDashboardStats,
+  AvatarFocus,
+  InfoCapsule,
+  InfoCapsuleType,
+  Space,
+  TimelineEntry,
+  TreeholeEntry,
+  User,
+} from './types';
 
 // --- Themes ---
 export type ThemeName = 'default' | 'anime' | 'scifi' | 'retro' | 'fantasy' | 'cinema';
@@ -190,6 +199,18 @@ const DEFAULT_AVATAR_FOCUS: AvatarFocus = { x: 50, y: 50, scale: 1 };
 const AVATAR_SCALE_MIN = 1;
 const AVATAR_SCALE_MAX = 3;
 const TIMELINE_COVER_FALLBACK = 'https://images.unsplash.com/photo-1490750967868-88aa4486c946?auto=format&fit=crop&w=800&q=80';
+const INFO_CAPSULE_TYPES: InfoCapsuleType[] = ['date', 'zodiac', 'location', 'custom'];
+const INFO_CAPSULE_TYPE_LABELS: Record<InfoCapsuleType, string> = {
+  date: '日期',
+  zodiac: '星座',
+  location: '地点',
+  custom: '自定义',
+};
+const CORE_INFO_CAPSULE_TYPES: InfoCapsuleType[] = ['date', 'location'];
+const DEFAULT_INFO_CAPSULES: InfoCapsule[] = [
+  {id: 'default-date', type: 'date', label: '日期', value: '1997-10-14'},
+  {id: 'default-location', type: 'location', label: '地点', value: '重庆市'},
+];
 const clampValue = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 const normalizeAvatarFocus = (focus?: Partial<AvatarFocus>): AvatarFocus => ({
   x: clampValue(Number.isFinite(focus?.x ?? NaN) ? (focus?.x as number) : DEFAULT_AVATAR_FOCUS.x, 0, 100),
@@ -197,6 +218,86 @@ const normalizeAvatarFocus = (focus?: Partial<AvatarFocus>): AvatarFocus => ({
   scale: clampValue(Number.isFinite(focus?.scale ?? NaN) ? (focus?.scale as number) : DEFAULT_AVATAR_FOCUS.scale, AVATAR_SCALE_MIN, AVATAR_SCALE_MAX),
 });
 const isCinemaTheme = (theme: {name: string}) => theme.name === 'cinema';
+
+const createInfoCapsuleId = () => `capsule-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
+const defaultInfoCapsuleLabel = (type: InfoCapsuleType): string => INFO_CAPSULE_TYPE_LABELS[type] ?? '自定义';
+
+const normalizeInfoCapsuleType = (type: unknown): InfoCapsuleType => (
+  typeof type === 'string' && INFO_CAPSULE_TYPES.includes(type as InfoCapsuleType) ? (type as InfoCapsuleType) : 'custom'
+);
+
+const normalizeInfoCapsules = (capsules: unknown): InfoCapsule[] => {
+  if (!Array.isArray(capsules)) {
+    return DEFAULT_INFO_CAPSULES.map((capsule) => ({...capsule}));
+  }
+
+  return capsules
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null;
+      const capsule = item as Partial<InfoCapsule>;
+      const type = normalizeInfoCapsuleType(capsule.type);
+      const label = typeof capsule.label === 'string' && capsule.label.trim()
+        ? capsule.label.trim().slice(0, 20)
+        : defaultInfoCapsuleLabel(type);
+      const value = typeof capsule.value === 'string' ? capsule.value.slice(0, 120) : '';
+      const id = typeof capsule.id === 'string' && capsule.id.trim()
+        ? capsule.id.trim().slice(0, 64)
+        : createInfoCapsuleId();
+      return {
+        id,
+        type,
+        label,
+        value,
+      };
+    })
+    .filter((item): item is InfoCapsule => item !== null);
+};
+
+const defaultInfoCapsuleByType = (type: InfoCapsuleType): InfoCapsule => {
+  const fallback = DEFAULT_INFO_CAPSULES.find((capsule) => capsule.type === type);
+  if (fallback) {
+    return {...fallback, id: createInfoCapsuleId()};
+  }
+  return {
+    id: createInfoCapsuleId(),
+    type,
+    label: defaultInfoCapsuleLabel(type),
+    value: '',
+  };
+};
+
+const ensureCoreInfoCapsules = (capsules: InfoCapsule[]): InfoCapsule[] => {
+  const normalized = normalizeInfoCapsules(capsules);
+  const coreCapsules = CORE_INFO_CAPSULE_TYPES.map((type) => {
+    const existing = normalized.find((capsule) => capsule.type === type);
+    if (!existing) return defaultInfoCapsuleByType(type);
+    return {
+      ...existing,
+      label: existing.label.trim() || defaultInfoCapsuleLabel(type),
+    };
+  });
+  return coreCapsules;
+};
+
+const formatInfoCapsuleValue = (capsule: InfoCapsule): string => {
+  if (capsule.type === 'date' && /^\d{4}-\d{2}-\d{2}$/.test(capsule.value)) {
+    return capsule.value.replace(/-/g, '.');
+  }
+  return capsule.value;
+};
+
+const getInfoCapsuleByType = (capsules: InfoCapsule[], type: InfoCapsuleType): InfoCapsule => {
+  const existing = capsules.find((capsule) => capsule.type === type);
+  if (existing) return existing;
+  return defaultInfoCapsuleByType(type);
+};
+
+const toDateInputValue = (value: string): string => {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  if (/^\d{4}\.\d{2}\.\d{2}$/.test(value)) return value.replace(/\./g, '-');
+  return '';
+};
 
 function useCoverImageRatio(coverImage: string) {
   const [coverRatio, setCoverRatio] = useState(1);
@@ -370,6 +471,7 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
   } | null>(null);
   const avatarPreviewRef = useRef<HTMLDivElement | null>(null);
   const [spaceDescription, setSpaceDescription] = useState(space.description);
+  const [infoCapsules, setInfoCapsules] = useState<InfoCapsule[]>(ensureCoreInfoCapsules(normalizeInfoCapsules(space.infoCapsules)));
   const [textPromptDialog, setTextPromptDialog] = useState<TextPromptDialogState | null>(null);
   const textPromptResolverRef = useRef<((value: string | null) => void) | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
@@ -429,6 +531,7 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
     setAvatarFocus(incomingAvatarFocus);
     setAvatarFocusDraft(incomingAvatarFocus);
     setSpaceDescription(space.description);
+    setInfoCapsules(ensureCoreInfoCapsules(normalizeInfoCapsules(space.infoCapsules)));
   }, [space.id]);
 
   React.useEffect(() => {
@@ -445,13 +548,14 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
       id: space.id,
       name: space.name,
       description: spaceDescription,
+      infoCapsules,
       entries: timelineEntries,
       treeholeEntries,
       heroImage,
       avatarImage,
       avatarFocus,
     });
-  }, [timelineEntries, treeholeEntries, heroImage, avatarImage, avatarFocus, onUpdateSpace, space.id, space.name, spaceDescription]);
+  }, [timelineEntries, treeholeEntries, heroImage, avatarImage, avatarFocus, infoCapsules, onUpdateSpace, space.id, space.name, spaceDescription]);
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, setter: (url: string) => void) => {
     const file = e.target.files?.[0];
@@ -850,6 +954,7 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
         id: space.id,
         name: trimmedName,
         description: spaceDescription,
+        infoCapsules,
         entries: timelineEntries,
         treeholeEntries,
         heroImage,
@@ -878,6 +983,51 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
       const trimmedDescription = nextDescription.replace(/\r\n/g, '\n').trim();
       if (!trimmedDescription) return;
       setSpaceDescription(trimmedDescription);
+    })();
+  };
+
+  const dateCapsule = getInfoCapsuleByType(infoCapsules, 'date');
+  const locationCapsule = getInfoCapsuleByType(infoCapsules, 'location');
+
+  const handleEditDateCapsule = () => {
+    void (async () => {
+      const nextDate = await openTextPrompt({
+        title: '修改日期',
+        label: '日期',
+        defaultValue: toDateInputValue(dateCapsule.value),
+        inputType: 'date',
+        allowEmpty: true,
+      });
+      if (nextDate === null) return;
+
+      setInfoCapsules((prev) =>
+        ensureCoreInfoCapsules(prev).map((capsule) => (
+          capsule.type === 'date'
+            ? {...capsule, label: '日期', value: nextDate.trim()}
+            : capsule
+        )),
+      );
+    })();
+  };
+
+  const handleEditLocationCapsule = () => {
+    void (async () => {
+      const nextLocation = await openTextPrompt({
+        title: '修改地点',
+        label: '地点',
+        defaultValue: locationCapsule.value,
+        allowEmpty: true,
+      });
+      if (nextLocation === null) return;
+
+      setInfoCapsules((prev) =>
+        ensureCoreInfoCapsules(prev).map((capsule) => {
+          if (capsule.type === 'location') {
+            return {...capsule, label: '地点', value: nextLocation.trim()};
+          }
+          return capsule;
+        }),
+      );
     })();
   };
 
@@ -973,22 +1123,22 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
           </div>
 
           <div className="mb-3 flex justify-center">
-            <div className="group relative w-fit pr-10 md:pr-12">
-              <motion.h1 
-                initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: 0.8, delay: 0.2, ease: "easeOut" }}
-                className={`${theme.fontTitle} text-4xl md:text-5xl font-extrabold ${theme.textMain} drop-shadow-sm flex items-center gap-2`}
-              >
-                {space.name} <Sparkles className={`${theme.accent} animate-pulse`} size={28} />
-              </motion.h1>
-              <button
-                type="button"
-                onClick={handleRenameCurrentSpace}
-                aria-label="修改空间名称"
-                className={`absolute right-0 top-1/2 -translate-y-1/2 w-8 h-8 md:w-9 md:h-9 flex items-center justify-center rounded-full ${theme.cardBg} border ${theme.cardBorder} ${theme.accent} shadow-sm invisible opacity-0 pointer-events-none group-hover:visible group-hover:opacity-100 group-hover:pointer-events-auto focus-visible:visible focus-visible:opacity-100 focus-visible:pointer-events-auto hover:opacity-80 transition-all duration-200`}
-              >
-                <Pencil size={14} />
-              </button>
-            </div>
+            <motion.h1
+              initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: 0.8, delay: 0.2, ease: 'easeOut' }}
+              onClick={handleRenameCurrentSpace}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  handleRenameCurrentSpace();
+                }
+              }}
+              role="button"
+              tabIndex={0}
+              aria-label="修改空间名称"
+              className={`${theme.fontTitle} text-4xl md:text-5xl font-extrabold ${theme.textMain} drop-shadow-sm text-center cursor-pointer hover:opacity-80 transition-opacity focus-visible:outline-none`}
+            >
+              {space.name}
+            </motion.h1>
           </div>
           <motion.p 
             initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: 0.8, delay: 0.4, ease: "easeOut" }}
@@ -998,28 +1148,47 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
           </motion.p>
           <motion.div
             initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: 0.8, delay: 0.6, ease: "easeOut" }}
-            className="group relative w-full max-w-xl mx-auto pr-10 md:pr-12"
+            className="w-fit max-w-xl mx-auto"
           >
-            <button
-              type="button"
+            <p
               onClick={handleEditDescription}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  handleEditDescription();
+                }
+              }}
+              role="button"
+              tabIndex={0}
               aria-label="修改简介"
-              className={`absolute right-0 top-1/2 -translate-y-1/2 w-8 h-8 md:w-9 md:h-9 flex items-center justify-center rounded-full ${theme.cardBg} border ${theme.cardBorder} ${theme.accent} shadow-sm invisible opacity-0 pointer-events-none group-hover:visible group-hover:opacity-100 group-hover:pointer-events-auto focus-visible:visible focus-visible:opacity-100 focus-visible:pointer-events-auto hover:opacity-80 transition-all duration-200`}
+              className={`${theme.textMuted} leading-relaxed font-medium text-base md:text-lg whitespace-pre-line px-2 md:px-3 text-center cursor-pointer hover:opacity-80 transition-opacity focus-visible:outline-none`}
             >
-              <Pencil size={14} />
-            </button>
-            <p className={`${theme.textMuted} leading-relaxed font-medium text-base md:text-lg whitespace-pre-line px-2 md:px-3`}>
               {spaceDescription}
             </p>
           </motion.div>
           
           <motion.div
-            initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: 0.8, delay: 0.8, ease: "easeOut" }}
-            className={`flex flex-wrap justify-center gap-6 md:gap-10 mt-6 ${theme.textMuted} font-medium text-sm md:text-base ${theme.cardBg} backdrop-blur-md px-8 py-3 rounded-full border ${theme.cardBorder} shadow-sm`}
+            initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: 0.8, delay: 0.8, ease: 'easeOut' }}
+            className="mt-6 flex justify-center"
           >
-            <div className="flex items-center gap-2"><Calendar size={16} className={theme.accent} /><span className="tracking-wider">1997.10.14</span></div>
-            <div className="flex items-center gap-2"><Star size={16} className={theme.accent} /><span className="tracking-wider">天秤座</span></div>
-            <div className="flex items-center gap-2"><MapPin size={16} className={theme.accent} /><span className="tracking-wider">重庆市</span></div>
+            <div className={`flex flex-wrap justify-center gap-6 md:gap-10 ${theme.textMuted} font-medium text-sm md:text-base ${theme.cardBg} backdrop-blur-md px-8 py-4 rounded-full border ${theme.cardBorder} shadow-sm`}>
+              <button
+                type="button"
+                onClick={handleEditDateCapsule}
+                className={`flex items-center gap-2 rounded-full px-2 py-1 transition-colors hover:bg-black/5 ${theme.textMain}`}
+              >
+                <Calendar size={16} className={theme.accent} />
+                <span className="tracking-wider">{formatInfoCapsuleValue(dateCapsule) || '未填写'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleEditLocationCapsule}
+                className={`flex items-center gap-2 rounded-full px-2 py-1 transition-colors hover:bg-black/5 ${theme.textMain}`}
+              >
+                <MapPin size={16} className={theme.accent} />
+                <span className="tracking-wider">{locationCapsule.value || '未填写'}</span>
+              </button>
+            </div>
           </motion.div>
         </div>
       </div>
