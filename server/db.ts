@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {hashPassword} from './auth/password';
+import {DEFAULT_USER_SPACE_LIMIT, DEFAULT_USER_STORAGE_LIMIT_BYTES} from './account-limits';
 
 const DATA_DIR = path.resolve(process.cwd(), 'data');
 export const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
@@ -24,6 +25,8 @@ db.exec(`
     password_hash TEXT NOT NULL,
     nickname TEXT NOT NULL,
     avatar_image TEXT NOT NULL DEFAULT '',
+    space_limit INTEGER NOT NULL DEFAULT ${DEFAULT_USER_SPACE_LIMIT},
+    storage_limit_bytes INTEGER NOT NULL DEFAULT ${DEFAULT_USER_STORAGE_LIMIT_BYTES},
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
@@ -107,6 +110,8 @@ function ensureColumn(table: string, column: string, definition: string) {
 
 ensureColumn('timeline_entries', 'cover_x', 'REAL NOT NULL DEFAULT 50');
 ensureColumn('timeline_entries', 'cover_y', 'REAL NOT NULL DEFAULT 42');
+ensureColumn('users', 'space_limit', `INTEGER NOT NULL DEFAULT ${DEFAULT_USER_SPACE_LIMIT}`);
+ensureColumn('users', 'storage_limit_bytes', `INTEGER NOT NULL DEFAULT ${DEFAULT_USER_STORAGE_LIMIT_BYTES}`);
 ensureColumn('spaces', 'avatar_x', 'REAL NOT NULL DEFAULT 50');
 ensureColumn('spaces', 'avatar_y', 'REAL NOT NULL DEFAULT 50');
 ensureColumn('spaces', 'avatar_scale', 'REAL NOT NULL DEFAULT 1');

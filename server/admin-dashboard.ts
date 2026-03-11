@@ -1,11 +1,22 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {UPLOADS_DIR, db} from './db';
+import {
+  DEFAULT_USER_SPACE_LIMIT,
+  DEFAULT_USER_STORAGE_LIMIT_BYTES,
+  calculateRemaining,
+  calculateUsagePercent,
+  formatStorageLimit,
+  normalizeSpaceLimit,
+  normalizeStorageLimitBytes,
+} from './account-limits';
 
 type UserRow = {
   id: string;
   email: string;
   nickname: string;
+  space_limit: number;
+  storage_limit_bytes: number;
 };
 
 type GroupCountRow = {
@@ -22,14 +33,52 @@ type UserStorageScan = {
   storageBytes: number;
 };
 
+type UserQuotaSettings = {
+  spaceLimit: number;
+  storageLimitBytes: number;
+};
+
+type AccountQuotaBreakdown = {
+  spaceCount: number;
+  spaceLimit: number;
+  remainingSpaceCount: number;
+  spaceUsagePercent: number;
+  photoFileCount: number;
+  referencedPhotoCount: number;
+  storageBytes: number;
+  storageLimitBytes: number;
+  remainingStorageBytes: number;
+  storageUsagePercent: number;
+};
+
+export type AccountDashboardStats = {
+  generatedAt: string;
+  spaceCount: number;
+  spaceLimit: number;
+  remainingSpaceCount: number;
+  spaceUsagePercent: number;
+  photoFileCount: number;
+  referencedPhotoCount: number;
+  storageBytes: number;
+  storageLimitBytes: number;
+  remainingStorageBytes: number;
+  storageUsagePercent: number;
+};
+
 export type AdminUserStorageStat = {
   userId: string;
   email: string;
   nickname: string;
   spaceCount: number;
+  spaceLimit: number;
+  remainingSpaceCount: number;
+  spaceUsagePercent: number;
   photoFileCount: number;
   referencedPhotoCount: number;
   storageBytes: number;
+  storageLimitBytes: number;
+  remainingStorageBytes: number;
+  storageUsagePercent: number;
   storageSharePercent: number;
 };
 
@@ -49,8 +98,22 @@ export type AdminDashboardStats = {
   perUser: AdminUserStorageStat[];
 };
 
+export class QuotaExceededError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'QuotaExceededError';
+  }
+}
+
 const DEFAULT_STORAGE_CAPACITY_GB = 5;
 const UPLOAD_URL_REGEX = /^\/uploads\/([^/]+)\/([^?#]+)$/;
+
+function normalizeQuotaSettings(spaceLimit: number, storageLimitBytes: number): UserQuotaSettings {
+  return {
+    spaceLimit: normalizeSpaceLimit(spaceLimit),
+    storageLimitBytes: normalizeStorageLimitBytes(storageLimitBytes),
+  };
+}
 
 function getStorageCapacityBytes(): number {
   const configured = Number(process.env.STORAGE_CAPACITY_GB ?? DEFAULT_STORAGE_CAPACITY_GB);
@@ -194,11 +257,89 @@ function listSpaceCountByUser(): Map<string, number> {
   return new Map(rows.map((row) => [row.owner_id, row.count]));
 }
 
+function getUserQuotaSettings(userId: string): UserQuotaSettings | null {
+  const row = db
+    .prepare(
+      `
+      SELECT space_limit, storage_limit_bytes
+      FROM users
+      WHERE id = ?
+      LIMIT 1
+    `,
+    )
+    .get(userId) as {space_limit: number; storage_limit_bytes: number} | undefined;
+
+  if (!row) return null;
+  return normalizeQuotaSettings(row.space_limit, row.storage_limit_bytes);
+}
+
+function buildQuotaBreakdown(
+  userId: string,
+  quotaSettings: UserQuotaSettings,
+  storageScan: ReturnType<typeof scanUploadDirectory>,
+  references: ReturnType<typeof listUploadReferences>,
+  spaceCountByUser: Map<string, number>,
+): AccountQuotaBreakdown {
+  const spaceCount = spaceCountByUser.get(userId) ?? 0;
+  const storageUsage = storageScan.byUser.get(userId) ?? {photoFileCount: 0, storageBytes: 0};
+  const referencedPhotoCount = references.referencedByUser.get(userId) ?? 0;
+
+  return {
+    spaceCount,
+    spaceLimit: quotaSettings.spaceLimit,
+    remainingSpaceCount: calculateRemaining(quotaSettings.spaceLimit, spaceCount),
+    spaceUsagePercent: calculateUsagePercent(spaceCount, quotaSettings.spaceLimit),
+    photoFileCount: storageUsage.photoFileCount,
+    referencedPhotoCount,
+    storageBytes: storageUsage.storageBytes,
+    storageLimitBytes: quotaSettings.storageLimitBytes,
+    remainingStorageBytes: calculateRemaining(quotaSettings.storageLimitBytes, storageUsage.storageBytes),
+    storageUsagePercent: calculateUsagePercent(storageUsage.storageBytes, quotaSettings.storageLimitBytes),
+  };
+}
+
+export function getAccountDashboardStats(userId: string): AccountDashboardStats | null {
+  const quotaSettings = getUserQuotaSettings(userId);
+  if (!quotaSettings) return null;
+
+  const storageScan = scanUploadDirectory();
+  const references = listUploadReferences();
+  const spaceCountByUser = listSpaceCountByUser();
+  const breakdown = buildQuotaBreakdown(userId, quotaSettings, storageScan, references, spaceCountByUser);
+
+  return {
+    generatedAt: new Date().toISOString(),
+    ...breakdown,
+  };
+}
+
+export function assertCanCreateSpace(userId: string): void {
+  const stats = getAccountDashboardStats(userId);
+  if (!stats) {
+    throw new Error('User not found');
+  }
+  if (stats.spaceCount >= stats.spaceLimit) {
+    throw new QuotaExceededError(`当前账户最多只能创建 ${stats.spaceLimit} 个空间`);
+  }
+}
+
+export function assertStorageQuotaAvailable(userId: string, additionalBytes = 0): void {
+  const stats = getAccountDashboardStats(userId);
+  if (!stats) {
+    throw new Error('User not found');
+  }
+
+  const projectedBytes = stats.storageBytes + Math.max(additionalBytes, 0);
+  if (projectedBytes > stats.storageLimitBytes) {
+    throw new QuotaExceededError(`当前账户已达到 ${formatStorageLimit(stats.storageLimitBytes)} 存储上限`);
+  }
+}
+
 export function getAdminDashboardStats(): AdminDashboardStats {
   const users = db
     .prepare(
       `
-      SELECT id, email, nickname
+      SELECT id, email, nickname, space_limit, storage_limit_bytes
       FROM users
       ORDER BY created_at ASC
     `,
@@ -216,7 +357,11 @@ export function getAdminDashboardStats(): AdminDashboardStats {
   }
 
   const userLookup = new Map(users.map((user) => [user.id, user]));
+  const quotaSettingsByUser = new Map(
+    users.map((user) => [user.id, normalizeQuotaSettings(user.space_limit, user.storage_limit_bytes)]),
+  );
   const allUserIds = new Set<string>(users.map((user) => user.id));
+  for (const userId of quotaSettingsByUser.keys()) allUserIds.add(userId);
   for (const userId of storageScan.byUser.keys()) allUserIds.add(userId);
   for (const userId of references.referencedByUser.keys()) allUserIds.add(userId);
   for (const userId of spaceCountByUser.keys()) allUserIds.add(userId);
@@ -224,24 +369,25 @@ export function getAdminDashboardStats(): AdminDashboardStats {
   const perUser = Array.from(allUserIds)
     .map((userId): AdminUserStorageStat => {
       const profile = userLookup.get(userId);
-      const storageUsage = storageScan.byUser.get(userId) ?? {photoFileCount: 0, storageBytes: 0};
+      const quotaSettings = quotaSettingsByUser.get(userId) ?? {
+        spaceLimit: DEFAULT_USER_SPACE_LIMIT,
+        storageLimitBytes: DEFAULT_USER_STORAGE_LIMIT_BYTES,
+      };
+      const quotaBreakdown = buildQuotaBreakdown(userId, quotaSettings, storageScan, references, spaceCountByUser);
       const storageSharePercent =
-        storageScan.usedBytes > 0 ? (storageUsage.storageBytes / storageScan.usedBytes) * 100 : 0;
+        storageScan.usedBytes > 0 ? (quotaBreakdown.storageBytes / storageScan.usedBytes) * 100 : 0;
 
       return {
         userId,
         email: profile?.email ?? '-',
         nickname: profile?.nickname ?? 'Unknown user',
-        spaceCount: spaceCountByUser.get(userId) ?? 0,
-        photoFileCount: storageUsage.photoFileCount,
-        referencedPhotoCount: references.referencedByUser.get(userId) ?? 0,
-        storageBytes: storageUsage.storageBytes,
         storageSharePercent,
+        ...quotaBreakdown,
       };
     })
     .sort((a, b) => {
       if (b.storageBytes !== a.storageBytes) return b.storageBytes - a.storageBytes;
-      if (b.photoFileCount !== a.photoFileCount) return b.photoFileCount - a.photoFileCount;
+      if (b.spaceUsagePercent !== a.spaceUsagePercent) return b.spaceUsagePercent - a.spaceUsagePercent;
       return a.userId.localeCompare(b.userId);
     });
 

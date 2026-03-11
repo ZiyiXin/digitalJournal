@@ -65,14 +65,34 @@ export interface User {
   avatarImage?: string;
 }
 
+export interface AccountDashboardStats {
+  generatedAt: string;
+  spaceCount: number;
+  spaceLimit: number;
+  remainingSpaceCount: number;
+  spaceUsagePercent: number;
+  photoFileCount: number;
+  referencedPhotoCount: number;
+  storageBytes: number;
+  storageLimitBytes: number;
+  remainingStorageBytes: number;
+  storageUsagePercent: number;
+}
+
 export interface AdminUserStorageStat {
   userId: string;
   email: string;
   nickname: string;
   spaceCount: number;
+  spaceLimit: number;
+  remainingSpaceCount: number;
+  spaceUsagePercent: number;
   photoFileCount: number;
   referencedPhotoCount: number;
   storageBytes: number;
+  storageLimitBytes: number;
+  remainingStorageBytes: number;
+  storageUsagePercent: number;
   storageSharePercent: number;
 }
 
