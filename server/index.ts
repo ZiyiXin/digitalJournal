@@ -4,7 +4,13 @@ import path from 'node:path';
 import {randomUUID} from 'node:crypto';
 import express from 'express';
 import multer from 'multer';
-import {getAdminDashboardStats} from './admin-dashboard';
+import {
+  assertCanCreateSpace,
+  assertStorageQuotaAvailable,
+  getAccountDashboardStats,
+  getAdminDashboardStats,
+  QuotaExceededError,
+} from './admin-dashboard';
 import {UPLOADS_DIR, getUserUploadsDir} from './db';
 import {
   createSpace,
@@ -259,6 +265,17 @@ app.get('/api/admin/dashboard', requireAuth, (req, res) => {
   res.json(getAdminDashboardStats());
 });
 
+app.get('/api/account/dashboard', requireAuth, (req, res) => {
+  const stats = getAccountDashboardStats(req.user!.id);
+  if (!stats) {
+    clearSessionCookie(res);
+    res.status(401).json({error: 'Unauthorized'});
+    return;
+  }
+
+  res.json(stats);
+});
+
 app.get('/uploads/:userId/:filename', requireAuth, (req, res) => {
   const requestedUserId = req.params.userId;
   if (req.user!.id !== requestedUserId) {
@@ -293,6 +310,17 @@ app.post('/api/uploads', requireAuth, upload.single('file'), (req, res) => {
     return;
   }
 
+  try {
+    assertStorageQuotaAvailable(req.user!.id);
+  } catch (error) {
+    try {
+      fs.unlinkSync(req.file.path);
+    } catch {
+      // Ignore cleanup failures and surface the original quota error.
+    }
+    throw error;
+  }
+
   res.status(201).json({url: `/uploads/${req.user!.id}/${req.file.filename}`});
 });
 
@@ -320,6 +348,7 @@ app.post('/api/spaces', requireAuth, (req, res) => {
     return;
   }
 
+  assertCanCreateSpace(req.user!.id);
   const created = createSpace(req.user!.id, {
     name: payload.name,
     avatarImage: payload.avatarImage,
@@ -395,6 +424,10 @@ app.delete('/api/spaces/:id', requireAuth, (req, res) => {
 });
 
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  if (err instanceof QuotaExceededError) {
+    res.status(409).json({error: err.message});
+    return;
+  }
   res.status(500).json({error: err.message || 'Internal Server Error'});
 });
 

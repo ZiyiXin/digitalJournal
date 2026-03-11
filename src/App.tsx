@@ -35,6 +35,7 @@ import { motion, AnimatePresence, useScroll, useSpring } from 'motion/react';
 import {
   createSpace,
   deleteSpace,
+  fetchAccountDashboard,
   fetchAdminDashboard,
   fetchMe,
   fetchSpaces,
@@ -48,6 +49,7 @@ import {
   uploadImage,
 } from './lib/api';
 import type {
+  AccountDashboardStats,
   AdminDashboardStats,
   AvatarFocus,
   InfoCapsule,
@@ -457,6 +459,7 @@ type ActionMenuProps = {
   userLabel: string;
   themeName: ThemeName;
   setThemeName: (theme: ThemeName) => void;
+  onOpenAccountPanel: () => void;
   canOpenAdminPanel: boolean;
   onOpenAdminPanel: () => void;
   onOpenChangePassword: () => void;
@@ -467,6 +470,7 @@ function ActionMenu({
   userLabel,
   themeName,
   setThemeName,
+  onOpenAccountPanel,
   canOpenAdminPanel,
   onOpenAdminPanel,
   onOpenChangePassword,
@@ -531,6 +535,11 @@ function ActionMenu({
     collapseMenu();
   };
 
+  const handleOpenAccountPanel = () => {
+    onOpenAccountPanel();
+    collapseMenu();
+  };
+
   const handleOpenChangePassword = () => {
     onOpenChangePassword();
     collapseMenu();
@@ -592,6 +601,11 @@ function ActionMenu({
               </AnimatePresence>
             </div>
 
+            <button type="button" onClick={handleOpenAccountPanel} className={actionButtonClass}>
+              <HardDrive className={theme.accent} size={16} />
+              <span>额度</span>
+            </button>
+
             {canOpenAdminPanel ? (
               <button type="button" onClick={handleOpenAdminPanel} className={actionButtonClass}>
                 <Shield className={theme.accent} size={16} />
@@ -643,6 +657,8 @@ type SpaceDetailProps = {
   themeName: ThemeName;
   setThemeName: (theme: ThemeName) => void;
   viewerName: string;
+  onUploadImage: (file: File) => Promise<string>;
+  onOpenAccountPanel: () => void;
   canOpenAdminPanel: boolean;
   onOpenAdminPanel: () => void;
   onOpenChangePassword: () => void;
@@ -657,6 +673,8 @@ function SpaceDetail({
   themeName,
   setThemeName,
   viewerName,
+  onUploadImage,
+  onOpenAccountPanel,
   canOpenAdminPanel,
   onOpenAdminPanel,
   onOpenChangePassword,
@@ -779,7 +797,7 @@ function SpaceDetail({
     if (file) {
       setIsUploadingImage(true);
       try {
-        const url = await uploadImage(file);
+        const url = await onUploadImage(file);
         setter(url);
       } catch (error) {
         const message = error instanceof Error ? error.message : '图片上传失败';
@@ -883,7 +901,7 @@ function SpaceDetail({
     setAvatarFocusDraft((prev) => ({ ...prev, scale: nextScale }));
   };
 
-  const handleUploadImage = async (file: File): Promise<string> => uploadImage(file);
+  const handleUploadImage = async (file: File): Promise<string> => onUploadImage(file);
 
   const sortByDateDesc = <T extends {date: string}>(items: T[]): T[] =>
     [...items].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -1262,6 +1280,7 @@ function SpaceDetail({
         userLabel={viewerName}
         themeName={themeName}
         setThemeName={setThemeName}
+        onOpenAccountPanel={onOpenAccountPanel}
         canOpenAdminPanel={canOpenAdminPanel}
         onOpenAdminPanel={onOpenAdminPanel}
         onOpenChangePassword={onOpenChangePassword}
@@ -3291,6 +3310,197 @@ function NoticeStack({
   );
 }
 
+function AccountDashboardPanel({
+  isOpen,
+  data,
+  isLoading,
+  errorMessage,
+  onRefresh,
+  onClose,
+}: {
+  isOpen: boolean;
+  data: AccountDashboardStats | null;
+  isLoading: boolean;
+  errorMessage: string | null;
+  onRefresh: () => void;
+  onClose: () => void;
+}) {
+  const theme = useTheme();
+
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
+  const spaceUsagePercent = Math.max(0, data?.spaceUsagePercent ?? 0);
+  const storageUsagePercent = Math.max(0, data?.storageUsagePercent ?? 0);
+  const spaceBarPercent = Math.min(spaceUsagePercent, 100);
+  const storageBarPercent = Math.min(storageUsagePercent, 100);
+  const spaceBarClass = spaceUsagePercent >= 100 ? 'bg-rose-500' : spaceUsagePercent >= 80 ? 'bg-amber-500' : 'bg-emerald-500';
+  const storageBarClass = storageUsagePercent >= 100 ? 'bg-rose-500' : storageUsagePercent >= 80 ? 'bg-amber-500' : 'bg-emerald-500';
+  const generatedAtText = data ? new Date(data.generatedAt).toLocaleString('zh-CN', {hour12: false}) : '-';
+  const isNearLimit = spaceUsagePercent >= 90 || storageUsagePercent >= 90;
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          initial={{opacity: 0}}
+          animate={{opacity: 1}}
+          exit={{opacity: 0}}
+          className="fixed inset-0 z-[160] bg-black/45 backdrop-blur-sm p-4 md:p-8"
+          onClick={onClose}
+        >
+          <motion.div
+            initial={{opacity: 0, y: 18, scale: 0.98}}
+            animate={{opacity: 1, y: 0, scale: 1}}
+            exit={{opacity: 0, y: 12, scale: 0.98}}
+            transition={{duration: 0.2}}
+            onClick={(event) => event.stopPropagation()}
+            className={`mx-auto flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl border ${theme.cardBorder} ${theme.cardBg} shadow-2xl`}
+          >
+            <div className={`flex items-center justify-between border-b px-5 py-4 md:px-7 ${theme.cardBorder}`}>
+              <div>
+                <p className={`text-[11px] uppercase tracking-[0.25em] ${theme.textMuted}`}>Account</p>
+                <h2 className={`mt-1 text-xl font-semibold ${theme.textMain}`}>账户限额面板</h2>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={onRefresh}
+                  className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm ${theme.cardBorder} ${theme.textMain} hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-50`}
+                  disabled={isLoading}
+                >
+                  <RefreshCw size={15} className={isLoading ? 'animate-spin' : ''} />
+                  刷新
+                </button>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className={`inline-flex h-9 w-9 items-center justify-center rounded-full border ${theme.cardBorder} ${theme.textMain} hover:opacity-80`}
+                  aria-label="关闭账户限额面板"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            <div className="overflow-y-auto px-5 py-5 md:px-7 md:py-6">
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <p className={`text-sm ${theme.textMuted}`}>最近更新时间：{generatedAtText}</p>
+                {isNearLimit ? (
+                  <div className="inline-flex items-center gap-2 rounded-full bg-amber-500/15 px-3 py-1 text-xs text-amber-700">
+                    <AlertTriangle size={13} />
+                    当前账户接近限额，请整理空间或减少上传
+                  </div>
+                ) : null}
+              </div>
+
+              {errorMessage && (
+                <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
+                  {errorMessage}
+                </div>
+              )}
+
+              {!data && isLoading && (
+                <div className={`rounded-2xl border ${theme.cardBorder} px-4 py-10 text-center text-sm ${theme.textMuted}`}>
+                  正在加载账户限额数据...
+                </div>
+              )}
+
+              {data ? (
+                <div className="space-y-4">
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <div className={`rounded-2xl border ${theme.cardBorder} ${theme.cardBg} p-4`}>
+                      <div className="mb-2 flex items-center justify-between">
+                        <p className={`text-xs uppercase tracking-[0.2em] ${theme.textMuted}`}>空间额度</p>
+                        <Database size={16} className={theme.accent} />
+                      </div>
+                      <p className={`text-2xl font-semibold ${theme.textMain}`}>{data.spaceCount}/{data.spaceLimit}</p>
+                    </div>
+                    <div className={`rounded-2xl border ${theme.cardBorder} ${theme.cardBg} p-4`}>
+                      <div className="mb-2 flex items-center justify-between">
+                        <p className={`text-xs uppercase tracking-[0.2em] ${theme.textMuted}`}>剩余空间位</p>
+                        <Users size={16} className={theme.accent} />
+                      </div>
+                      <p className={`text-2xl font-semibold ${theme.textMain}`}>{data.remainingSpaceCount}</p>
+                    </div>
+                    <div className={`rounded-2xl border ${theme.cardBorder} ${theme.cardBg} p-4`}>
+                      <div className="mb-2 flex items-center justify-between">
+                        <p className={`text-xs uppercase tracking-[0.2em] ${theme.textMuted}`}>存储额度</p>
+                        <HardDrive size={16} className={theme.accent} />
+                      </div>
+                      <p className={`text-2xl font-semibold ${theme.textMain}`}>{formatBytes(data.storageBytes)}</p>
+                      <p className={`mt-1 text-xs ${theme.textMuted}`}>上限 {formatBytes(data.storageLimitBytes)}</p>
+                    </div>
+                    <div className={`rounded-2xl border ${theme.cardBorder} ${theme.cardBg} p-4`}>
+                      <div className="mb-2 flex items-center justify-between">
+                        <p className={`text-xs uppercase tracking-[0.2em] ${theme.textMuted}`}>照片文件</p>
+                        <Images size={16} className={theme.accent} />
+                      </div>
+                      <p className={`text-2xl font-semibold ${theme.textMain}`}>{data.photoFileCount}</p>
+                    </div>
+                  </div>
+
+                  <div className={`rounded-2xl border ${theme.cardBorder} ${theme.cardBg} p-4`}>
+                    <div className="mb-2 flex items-center justify-between">
+                      <p className={`text-sm font-semibold ${theme.textMain}`}>空间数量使用情况</p>
+                      <span className={`text-xs ${theme.textMuted}`}>{formatPercent(spaceUsagePercent)}</span>
+                    </div>
+                    <div className="h-3 w-full overflow-hidden rounded-full bg-stone-200/80">
+                      <div className={`h-full ${spaceBarClass}`} style={{width: `${spaceBarPercent}%`}} />
+                    </div>
+                    <div className={`mt-2 flex flex-wrap gap-3 text-xs ${theme.textMuted}`}>
+                      <span>已创建：{data.spaceCount}</span>
+                      <span>上限：{data.spaceLimit}</span>
+                      <span>剩余：{data.remainingSpaceCount}</span>
+                    </div>
+                  </div>
+
+                  <div className={`rounded-2xl border ${theme.cardBorder} ${theme.cardBg} p-4`}>
+                    <div className="mb-2 flex items-center justify-between">
+                      <p className={`text-sm font-semibold ${theme.textMain}`}>存储使用情况</p>
+                      <span className={`text-xs ${theme.textMuted}`}>{formatPercent(storageUsagePercent)}</span>
+                    </div>
+                    <div className="h-3 w-full overflow-hidden rounded-full bg-stone-200/80">
+                      <div className={`h-full ${storageBarClass}`} style={{width: `${storageBarPercent}%`}} />
+                    </div>
+                    <div className={`mt-2 flex flex-wrap gap-3 text-xs ${theme.textMuted}`}>
+                      <span>已用：{formatBytes(data.storageBytes)}</span>
+                      <span>上限：{formatBytes(data.storageLimitBytes)}</span>
+                      <span>剩余：{formatBytes(data.remainingStorageBytes)}</span>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+                      <p className="text-xs uppercase tracking-[0.2em] text-emerald-600">已引用照片</p>
+                      <p className="mt-2 text-2xl font-semibold text-emerald-700">{data.referencedPhotoCount}</p>
+                      <p className="mt-1 text-xs text-emerald-600">当前空间内容正在使用的文件</p>
+                    </div>
+                    <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
+                      <p className="text-xs uppercase tracking-[0.2em] text-stone-500">配额说明</p>
+                      <p className="mt-2 text-sm font-medium text-stone-700">每个账户最多 3 个空间，总存储上限 1 GB。</p>
+                      <p className="mt-1 text-xs text-stone-500">超出后会阻止继续创建空间或上传新图片。</p>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
 function AdminDashboardPanel({
   isOpen,
   data,
@@ -3460,7 +3670,7 @@ function AdminDashboardPanel({
 
                   <div className={`rounded-2xl border ${theme.cardBorder} ${theme.cardBg} p-4`}>
                     <div className="mb-3 flex items-center justify-between">
-                      <p className={`text-sm font-semibold ${theme.textMain}`}>按用户存储分布</p>
+                      <p className={`text-sm font-semibold ${theme.textMain}`}>按账户限额与用量</p>
                       <span className={`text-xs ${theme.textMuted}`}>共 {data.perUser.length} 个账号节点</span>
                     </div>
                     <div className="overflow-x-auto">
@@ -3468,11 +3678,15 @@ function AdminDashboardPanel({
                         <thead>
                           <tr className={`border-b ${theme.cardBorder}`}>
                             <th className={`px-2 py-2 text-xs font-medium uppercase tracking-[0.15em] ${theme.textMuted}`}>用户</th>
-                            <th className={`px-2 py-2 text-xs font-medium uppercase tracking-[0.15em] ${theme.textMuted}`}>空间</th>
+                            <th className={`px-2 py-2 text-xs font-medium uppercase tracking-[0.15em] ${theme.textMuted}`}>空间用量</th>
+                            <th className={`px-2 py-2 text-xs font-medium uppercase tracking-[0.15em] ${theme.textMuted}`}>空间剩余</th>
+                            <th className={`px-2 py-2 text-xs font-medium uppercase tracking-[0.15em] ${theme.textMuted}`}>空间占用</th>
                             <th className={`px-2 py-2 text-xs font-medium uppercase tracking-[0.15em] ${theme.textMuted}`}>照片文件</th>
                             <th className={`px-2 py-2 text-xs font-medium uppercase tracking-[0.15em] ${theme.textMuted}`}>已引用</th>
-                            <th className={`px-2 py-2 text-xs font-medium uppercase tracking-[0.15em] ${theme.textMuted}`}>使用容量</th>
-                            <th className={`px-2 py-2 text-xs font-medium uppercase tracking-[0.15em] ${theme.textMuted}`}>占比</th>
+                            <th className={`px-2 py-2 text-xs font-medium uppercase tracking-[0.15em] ${theme.textMuted}`}>容量用量</th>
+                            <th className={`px-2 py-2 text-xs font-medium uppercase tracking-[0.15em] ${theme.textMuted}`}>容量剩余</th>
+                            <th className={`px-2 py-2 text-xs font-medium uppercase tracking-[0.15em] ${theme.textMuted}`}>容量占用</th>
+                            <th className={`px-2 py-2 text-xs font-medium uppercase tracking-[0.15em] ${theme.textMuted}`}>全局占比</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -3482,10 +3696,14 @@ function AdminDashboardPanel({
                                 <div className={`font-medium ${theme.textMain}`}>{item.nickname}</div>
                                 <div className={`text-xs ${theme.textMuted}`}>{item.email === '-' ? '未登记邮箱' : item.email}</div>
                               </td>
-                              <td className={`px-2 py-2 ${theme.textMain}`}>{item.spaceCount}</td>
+                              <td className={`px-2 py-2 ${theme.textMain}`}>{item.spaceCount}/{item.spaceLimit}</td>
+                              <td className={`px-2 py-2 ${theme.textMain}`}>{item.remainingSpaceCount}</td>
+                              <td className={`px-2 py-2 ${theme.textMain}`}>{formatPercent(item.spaceUsagePercent)}</td>
                               <td className={`px-2 py-2 ${theme.textMain}`}>{item.photoFileCount}</td>
                               <td className={`px-2 py-2 ${theme.textMain}`}>{item.referencedPhotoCount}</td>
-                              <td className={`px-2 py-2 ${theme.textMain}`}>{formatBytes(item.storageBytes)}</td>
+                              <td className={`px-2 py-2 ${theme.textMain}`}>{formatBytes(item.storageBytes)} / {formatBytes(item.storageLimitBytes)}</td>
+                              <td className={`px-2 py-2 ${theme.textMain}`}>{formatBytes(item.remainingStorageBytes)}</td>
+                              <td className={`px-2 py-2 ${theme.textMain}`}>{formatPercent(item.storageUsagePercent)}</td>
                               <td className={`px-2 py-2 ${theme.textMain}`}>{formatPercent(item.storageSharePercent)}</td>
                             </tr>
                           ))}
@@ -3510,20 +3728,24 @@ function AdminDashboardPanel({
 // --- Portal Component ---
 function Portal({
   spaces,
+  accountStats,
   portalTitle,
   onUpdatePortalTitle,
   onSelectSpace,
   onCreateSpace,
   onRenameSpace,
   onDeleteSpace,
+  onUploadImage,
 }: {
   spaces: Space[];
+  accountStats: AccountDashboardStats | null;
   portalTitle: string;
   onUpdatePortalTitle: (title: string) => void;
   onSelectSpace: (id: string) => void;
   onCreateSpace: (name: string, avatar: string) => Promise<void>;
   onRenameSpace: (id: string, name: string) => Promise<void>;
   onDeleteSpace: (id: string) => Promise<void>;
+  onUploadImage: (file: File) => Promise<string>;
 }) {
   const theme = useTheme();
   const notify = useNotice();
@@ -3544,8 +3766,17 @@ function Portal({
     }
   }, [portalTitle, isEditingPortalTitle]);
 
+  const spaceLimit = accountStats?.spaceLimit ?? null;
+  const spaceCount = accountStats?.spaceCount ?? spaces.length;
+  const remainingSpaceCount = accountStats?.remainingSpaceCount ?? (spaceLimit ? Math.max(spaceLimit - spaceCount, 0) : null);
+  const isSpaceLimitReached = accountStats ? accountStats.spaceCount >= accountStats.spaceLimit : false;
+
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSpaceLimitReached) {
+      notify(accountStats ? `当前账户最多只能创建 ${accountStats.spaceLimit} 个空间` : '当前账户已达到空间数量上限');
+      return;
+    }
     if (newName && newAvatar) {
       setIsSubmitting(true);
       try {
@@ -3567,7 +3798,7 @@ function Portal({
     if (file) {
       setIsUploadingAvatar(true);
       try {
-        const url = await uploadImage(file);
+        const url = await onUploadImage(file);
         setNewAvatar(url);
       } catch (error) {
         const message = error instanceof Error ? error.message : '头像上传失败';
@@ -3614,6 +3845,14 @@ function Portal({
       onUpdatePortalTitle(trimmedTitle);
     }
     setIsEditingPortalTitle(false);
+  };
+
+  const handleOpenCreate = () => {
+    if (isSpaceLimitReached) {
+      notify(accountStats ? `当前账户最多只能创建 ${accountStats.spaceLimit} 个空间` : '当前账户已达到空间数量上限');
+      return;
+    }
+    setIsCreating(true);
   };
 
   return (
@@ -3750,10 +3989,10 @@ function Portal({
             initial={{ opacity: 0, y: 50 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: spaces.length * 0.15, duration: 0.8 }}
-            className={`relative group cursor-pointer ${spaces.length % 2 !== 0 ? 'translate-y-8 md:translate-y-16' : ''}`}
-            onClick={() => setIsCreating(true)}
+            className={`relative group ${isSpaceLimitReached ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'} ${spaces.length % 2 !== 0 ? 'translate-y-8 md:translate-y-16' : ''}`}
+            onClick={handleOpenCreate}
             style={{ rotate: '1deg' }}
-            whileHover={{ scale: 1.02, rotate: 0, zIndex: 50 }}
+            whileHover={isSpaceLimitReached ? undefined : { scale: 1.02, rotate: 0, zIndex: 50 }}
           >
             {/* Background dashed layer for thickness */}
             <div className="absolute inset-0 border border-stone-300/60 border-dashed rounded-sm transition-all duration-500 group-hover:rotate-[4deg] group-hover:translate-x-4 group-hover:translate-y-2 z-0 origin-bottom-left"></div>
@@ -3764,6 +4003,11 @@ function Portal({
                 <Plus className="text-stone-400 group-hover:text-stone-600 transition-colors" size={24} />
               </div>
               <span className="text-stone-400 font-serif tracking-widest text-sm group-hover:text-stone-600 transition-colors">NEW CHAPTER</span>
+              {spaceLimit ? (
+                <span className="mt-3 text-[11px] font-mono tracking-[0.2em] text-stone-400">
+                  {spaceCount}/{spaceLimit}
+                </span>
+              ) : null}
             </div>
           </motion.div>
         </div>
@@ -3792,6 +4036,19 @@ function Portal({
               </button>
               
               <h2 className="text-2xl font-serif text-stone-800 mb-8 text-center tracking-widest">开启新篇章</h2>
+
+              {accountStats ? (
+                <div className="mb-6 rounded-sm border border-stone-200 bg-white/70 px-4 py-3 text-sm text-stone-600">
+                  <div className="flex items-center justify-between gap-3">
+                    <span>空间额度</span>
+                    <span className="font-medium text-stone-800">{accountStats.spaceCount}/{accountStats.spaceLimit}</span>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between gap-3">
+                    <span>剩余可建空间</span>
+                    <span className="font-medium text-stone-800">{remainingSpaceCount ?? 0}</span>
+                  </div>
+                </div>
+              ) : null}
               
               <form onSubmit={handleCreate} className="space-y-8">
                 <div>
@@ -4023,6 +4280,10 @@ export default function App() {
   const [confirmPasswordDraft, setConfirmPasswordDraft] = useState('');
   const [changePasswordError, setChangePasswordError] = useState<string | null>(null);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [isAccountPanelOpen, setIsAccountPanelOpen] = useState(false);
+  const [accountStats, setAccountStats] = useState<AccountDashboardStats | null>(null);
+  const [isAccountStatsLoading, setIsAccountStatsLoading] = useState(false);
+  const [accountStatsError, setAccountStatsError] = useState<string | null>(null);
   const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false);
   const [adminStats, setAdminStats] = useState<AdminDashboardStats | null>(null);
   const [isAdminStatsLoading, setIsAdminStatsLoading] = useState(false);
@@ -4083,6 +4344,10 @@ export default function App() {
     setSpaces([]);
     setCurrentSpaceId(null);
     setIsChangePasswordOpen(false);
+    setIsAccountPanelOpen(false);
+    setAccountStats(null);
+    setIsAccountStatsLoading(false);
+    setAccountStatsError(null);
     setIsAdminPanelOpen(false);
     setAdminStats(null);
     setIsAdminStatsLoading(false);
@@ -4094,6 +4359,26 @@ export default function App() {
   const normalizeErrorMessage = useCallback((error: unknown, fallback: string): string => (
     error instanceof Error ? error.message : fallback
   ), []);
+
+  const loadAccountStats = useCallback(async () => {
+    setIsAccountStatsLoading(true);
+    setAccountStatsError(null);
+    try {
+      const stats = await fetchAccountDashboard();
+      setAccountStats(stats);
+      return stats;
+    } catch (error) {
+      if (isApiError(error) && error.status === 401) {
+        notify('登录状态已失效，请重新登录');
+        moveToSignedOutState();
+        return null;
+      }
+      setAccountStatsError(normalizeErrorMessage(error, '加载账户限额失败'));
+      return null;
+    } finally {
+      setIsAccountStatsLoading(false);
+    }
+  }, [moveToSignedOutState, normalizeErrorMessage, notify]);
 
   const loadAdminStats = useCallback(async () => {
     setIsAdminStatsLoading(true);
@@ -4114,6 +4399,7 @@ export default function App() {
   }, [moveToSignedOutState, normalizeErrorMessage, notify]);
 
   const openAdminPanel = useCallback(() => {
+    setIsAccountPanelOpen(false);
     setIsAdminPanelOpen(true);
     void loadAdminStats();
   }, [loadAdminStats]);
@@ -4122,17 +4408,26 @@ export default function App() {
     setIsAdminPanelOpen(false);
   }, []);
 
+  const openAccountPanel = useCallback(() => {
+    setIsAdminPanelOpen(false);
+    setIsAccountPanelOpen(true);
+    void loadAccountStats();
+  }, [loadAccountStats]);
+
+  const closeAccountPanel = useCallback(() => {
+    setIsAccountPanelOpen(false);
+  }, []);
+
   React.useEffect(() => {
     let mounted = true;
     (async () => {
       try {
-        const me = await fetchMe();
+        const [me, data, quota] = await Promise.all([fetchMe(), fetchSpaces(), fetchAccountDashboard()]);
         if (!mounted) return;
         setCurrentUser(me);
-
-        const data = await fetchSpaces();
-        if (!mounted) return;
         setSpaces(data);
+        setAccountStats(quota);
+        setAccountStatsError(null);
         setBootstrapError(null);
       } catch (error) {
         if (!mounted) return;
@@ -4155,10 +4450,13 @@ export default function App() {
 
   const handleLogin = useCallback(async (payload: {email: string; password: string}) => {
     const user = await login(payload);
-    const data = await fetchSpaces();
+    const [data, quota] = await Promise.all([fetchSpaces(), fetchAccountDashboard()]);
     setCurrentUser(user);
     setSpaces(data);
     setCurrentSpaceId(null);
+    setIsAccountPanelOpen(false);
+    setAccountStats(quota);
+    setAccountStatsError(null);
     setIsAdminPanelOpen(false);
     setAdminStats(null);
     setAdminStatsError(null);
@@ -4167,10 +4465,13 @@ export default function App() {
 
   const handleRegister = useCallback(async (payload: {email: string; password: string; nickname: string}) => {
     const user = await register(payload);
-    const data = await fetchSpaces();
+    const [data, quota] = await Promise.all([fetchSpaces(), fetchAccountDashboard()]);
     setCurrentUser(user);
     setSpaces(data);
     setCurrentSpaceId(null);
+    setIsAccountPanelOpen(false);
+    setAccountStats(quota);
+    setAccountStatsError(null);
     setIsAdminPanelOpen(false);
     setAdminStats(null);
     setAdminStatsError(null);
@@ -4308,6 +4609,7 @@ export default function App() {
         avatarImage,
       });
       setSpaces((prev) => [...prev, created]);
+      void loadAccountStats();
     } catch (error) {
       if (isApiError(error) && error.status === 401) {
         notify('登录状态已失效，请重新登录');
@@ -4316,7 +4618,7 @@ export default function App() {
       }
       throw error;
     }
-  }, [moveToSignedOutState, notify]);
+  }, [loadAccountStats, moveToSignedOutState, notify]);
 
   const handleRenameSpace = useCallback(async (id: string, name: string) => {
     try {
@@ -4345,6 +4647,7 @@ export default function App() {
         clearTimeout(timer);
         delete saveTimersRef.current[id];
       }
+      void loadAccountStats();
     } catch (error) {
       if (isApiError(error) && error.status === 401) {
         notify('登录状态已失效，请重新登录');
@@ -4353,7 +4656,21 @@ export default function App() {
       }
       throw error;
     }
-  }, [moveToSignedOutState, notify]);
+  }, [loadAccountStats, moveToSignedOutState, notify]);
+
+  const handleUploadImage = useCallback(async (file: File) => {
+    try {
+      const url = await uploadImage(file);
+      void loadAccountStats();
+      return url;
+    } catch (error) {
+      if (isApiError(error) && error.status === 401) {
+        notify('登录状态已失效，请重新登录');
+        moveToSignedOutState();
+      }
+      throw error;
+    }
+  }, [loadAccountStats, moveToSignedOutState, notify]);
 
   const currentTheme = THEMES[themeName];
   const currentSpace = currentSpaceId ? spaces.find((space) => space.id === currentSpaceId) ?? null : null;
@@ -4396,6 +4713,7 @@ export default function App() {
               userLabel={currentUser.nickname}
               themeName={themeName}
               setThemeName={setThemeName}
+              onOpenAccountPanel={openAccountPanel}
               canOpenAdminPanel={canOpenAdminPanel}
               onOpenAdminPanel={openAdminPanel}
               onOpenChangePassword={openChangePasswordDialog}
@@ -4407,12 +4725,14 @@ export default function App() {
               <motion.div key="portal" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.5 }}>
                 <Portal 
                   spaces={spaces} 
+                  accountStats={accountStats}
                   portalTitle={portalTitle}
                   onUpdatePortalTitle={setPortalTitle}
                   onSelectSpace={setCurrentSpaceId} 
                   onCreateSpace={handleCreateSpace}
                   onRenameSpace={handleRenameSpace}
                   onDeleteSpace={handleDeleteSpace}
+                  onUploadImage={handleUploadImage}
                 />
               </motion.div>
             ) : (
@@ -4424,6 +4744,8 @@ export default function App() {
                   themeName={themeName}
                   setThemeName={setThemeName}
                   viewerName={currentUser.nickname}
+                  onUploadImage={handleUploadImage}
+                  onOpenAccountPanel={openAccountPanel}
                   canOpenAdminPanel={canOpenAdminPanel}
                   onOpenAdminPanel={openAdminPanel}
                   onOpenChangePassword={openChangePasswordDialog}
@@ -4432,6 +4754,14 @@ export default function App() {
               </motion.div>
             )}
           </AnimatePresence>
+          <AccountDashboardPanel
+            isOpen={isAccountPanelOpen}
+            data={accountStats}
+            isLoading={isAccountStatsLoading}
+            errorMessage={accountStatsError}
+            onRefresh={() => void loadAccountStats()}
+            onClose={closeAccountPanel}
+          />
           <AdminDashboardPanel
             isOpen={isAdminPanelOpen}
             data={adminStats}
