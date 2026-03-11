@@ -27,6 +27,9 @@ import {
   HardDrive,
   RefreshCw,
   AlertTriangle,
+  KeyRound,
+  LogOut,
+  Shield,
 } from 'lucide-react';
 import { motion, AnimatePresence, useScroll, useSpring } from 'motion/react';
 import {
@@ -54,6 +57,12 @@ import type {
   TreeholeEntry,
   User,
 } from './types';
+
+const LEGACY_ADMIN_EMAIL = 'legacy@digital-journal.local';
+
+function canAccessAdminDashboard(email: string): boolean {
+  return email.trim().toLowerCase() === LEGACY_ADMIN_EMAIL;
+}
 
 // --- Themes ---
 export type ThemeName = 'default' | 'anime' | 'scifi' | 'retro' | 'fantasy' | 'cinema';
@@ -186,6 +195,7 @@ export const THEMES = {
     tape: 'bg-[#FFD8B5]/15',
   }
 };
+const THEME_OPTIONS: ThemeName[] = ['default', 'anime', 'scifi', 'retro', 'fantasy', 'cinema'];
 
 export const ThemeContext = React.createContext(THEMES.default);
 export const useTheme = () => React.useContext(ThemeContext);
@@ -443,8 +453,215 @@ type NoticeItem = {
   message: string;
 };
 
+type ActionMenuProps = {
+  userLabel: string;
+  themeName: ThemeName;
+  setThemeName: (theme: ThemeName) => void;
+  canOpenAdminPanel: boolean;
+  onOpenAdminPanel: () => void;
+  onOpenChangePassword: () => void;
+  onLogout: () => void;
+};
+
+function ActionMenu({
+  userLabel,
+  themeName,
+  setThemeName,
+  canOpenAdminPanel,
+  onOpenAdminPanel,
+  onOpenChangePassword,
+  onLogout,
+}: ActionMenuProps) {
+  const theme = useTheme();
+  const menuContainerRef = useRef<HTMLDivElement | null>(null);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [isThemeMenuOpen, setIsThemeMenuOpen] = useState(false);
+  const triggerButtonClass = `inline-flex items-center gap-2 rounded-full border ${theme.cardBorder} ${theme.cardBg} px-4 py-2 text-sm font-medium ${theme.textMain} shadow-sm backdrop-blur-md transition-colors hover:bg-black/5`;
+  const actionButtonClass = `inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-1 text-[13px] font-medium ${theme.textMain} transition-colors hover:bg-black/5`;
+  const iconButtonClass = `inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${theme.textMuted} transition-colors hover:bg-black/5`;
+  const dividerClass = `h-3.5 w-px ${theme.cardBorder}`;
+  const themeOptionClass = `block w-full rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors hover:bg-black/5`;
+
+  React.useEffect(() => {
+    if (!isExpanded) return;
+
+    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (!menuContainerRef.current?.contains(target)) {
+        setIsExpanded(false);
+        setIsThemeMenuOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsExpanded(false);
+        setIsThemeMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('touchstart', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('touchstart', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isExpanded]);
+
+  const collapseMenu = () => {
+    setIsExpanded(false);
+    setIsThemeMenuOpen(false);
+  };
+
+  const expandMenu = () => {
+    setIsThemeMenuOpen(false);
+    setIsExpanded(true);
+  };
+
+  const handleThemeChange = (nextTheme: ThemeName) => {
+    setThemeName(nextTheme);
+    setIsThemeMenuOpen(false);
+  };
+
+  const handleOpenAdminPanel = () => {
+    onOpenAdminPanel();
+    collapseMenu();
+  };
+
+  const handleOpenChangePassword = () => {
+    onOpenChangePassword();
+    collapseMenu();
+  };
+
+  const handleLogout = () => {
+    onLogout();
+    collapseMenu();
+  };
+
+  return (
+    <div ref={menuContainerRef} className="fixed right-3 top-3 z-[120] flex justify-end px-1">
+      <AnimatePresence initial={false} mode="wait">
+        {isExpanded ? (
+          <motion.div
+            key="expanded-menu"
+            initial={{opacity: 0, y: -6, scale: 0.98}}
+            animate={{opacity: 1, y: 0, scale: 1}}
+            exit={{opacity: 0, y: -6, scale: 0.98}}
+            transition={{duration: 0.16, ease: 'easeOut'}}
+            className={`flex max-w-[calc(100vw-1rem)] items-center gap-1 whitespace-nowrap rounded-full border px-2 py-1.5 shadow-sm ${theme.cardBg} ${theme.cardBorder} backdrop-blur-md ${isThemeMenuOpen ? 'overflow-visible' : 'overflow-x-auto hide-scrollbar'}`}
+          >
+            <div className={`inline-flex min-w-0 items-center gap-1.5 px-1 py-0.5 text-[13px] font-medium ${theme.textMain}`}>
+              <Users size={14} className={theme.accent} />
+              <span className="max-w-[9rem] truncate">{userLabel}</span>
+            </div>
+
+            <span aria-hidden="true" className={dividerClass} />
+
+            <div className="relative shrink-0">
+              <button type="button" onClick={() => setIsThemeMenuOpen((prev) => !prev)} className={actionButtonClass}>
+                <Palette className={theme.accent} size={16} />
+                <span>主题</span>
+                <span className={`text-xs capitalize ${theme.textMuted}`}>{themeName}</span>
+                <ChevronDown size={14} className={`${theme.textMuted} transition-transform ${isThemeMenuOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              <AnimatePresence>
+                {isThemeMenuOpen ? (
+                  <motion.div
+                    initial={{opacity: 0, y: -4}}
+                    animate={{opacity: 1, y: 0}}
+                    exit={{opacity: 0, y: -4}}
+                    transition={{duration: 0.14, ease: 'easeOut'}}
+                    className={`absolute right-0 top-full z-20 mt-2 max-h-56 w-44 overflow-x-hidden overflow-y-auto whitespace-normal rounded-2xl border p-1 shadow-xl ${theme.cardBg} ${theme.cardBorder} backdrop-blur-xl`}
+                  >
+                    {THEME_OPTIONS.map((t) => (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => handleThemeChange(t)}
+                        className={`${themeOptionClass} ${themeName === t ? theme.accent : theme.textMuted} capitalize`}
+                      >
+                        {t}
+                      </button>
+                    ))}
+                  </motion.div>
+                ) : null}
+              </AnimatePresence>
+            </div>
+
+            {canOpenAdminPanel ? (
+              <button type="button" onClick={handleOpenAdminPanel} className={actionButtonClass}>
+                <Shield className={theme.accent} size={16} />
+                <span>管理</span>
+              </button>
+            ) : null}
+
+            <button type="button" onClick={handleOpenChangePassword} className={actionButtonClass}>
+              <KeyRound className={theme.accent} size={16} />
+              <span>密码</span>
+            </button>
+
+            <button type="button" onClick={handleLogout} className={actionButtonClass}>
+              <LogOut className={theme.accent} size={16} />
+              <span>退出</span>
+            </button>
+
+            <button type="button" onClick={collapseMenu} aria-label="收起菜单" className={iconButtonClass}>
+              <X size={16} />
+            </button>
+          </motion.div>
+        ) : (
+          <motion.button
+            key="collapsed-menu"
+            type="button"
+            onClick={expandMenu}
+            aria-expanded={false}
+            aria-label="展开菜单"
+            initial={{opacity: 0, y: -6, scale: 0.98}}
+            animate={{opacity: 1, y: 0, scale: 1}}
+            exit={{opacity: 0, y: -6, scale: 0.98}}
+            transition={{duration: 0.16, ease: 'easeOut'}}
+            className={triggerButtonClass}
+          >
+            <Users size={17} className={theme.accent} />
+            <span>菜单</span>
+            <ChevronDown size={17} className={theme.textMuted} />
+          </motion.button>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+type SpaceDetailProps = {
+  space: Space;
+  onBack: () => void;
+  onUpdateSpace: (space: Space) => void;
+  themeName: ThemeName;
+  setThemeName: (theme: ThemeName) => void;
+  viewerName: string;
+  canOpenAdminPanel: boolean;
+  onOpenAdminPanel: () => void;
+  onOpenChangePassword: () => void;
+  onLogout: () => void;
+};
+
 // --- Main App ---
-function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: { space: Space, onBack: () => void, onUpdateSpace: (space: Space) => void, themeName: ThemeName, setThemeName: (theme: ThemeName) => void }) {
+function SpaceDetail({
+  space,
+  onBack,
+  onUpdateSpace,
+  themeName,
+  setThemeName,
+  viewerName,
+  canOpenAdminPanel,
+  onOpenAdminPanel,
+  onOpenChangePassword,
+  onLogout,
+}: SpaceDetailProps) {
   const [timelineEntries, setTimelineEntries] = useState<TimelineEntry[]>(space.entries);
   const [treeholeEntries, setTreeholeEntries] = useState<TreeholeEntry[]>(space.treeholeEntries);
   
@@ -1041,35 +1258,18 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
         <ArrowLeft className={`${theme.textMuted} group-hover:-translate-x-1 transition-transform`} size={20} />
       </button>
 
-      {/* Theme Selector */}
-      <div className="fixed top-20 right-6 z-50 flex gap-3">
-        <div className="relative group">
-          <button className={`flex items-center gap-2 ${theme.cardBg} backdrop-blur-md px-4 py-3 rounded-full cursor-pointer hover:opacity-80 transition-all shadow-sm border ${theme.cardBorder}`}>
-            <Palette className={theme.accent} size={20} />
-            <span className={`text-sm font-medium ${theme.textMain} capitalize hidden md:inline`}>{theme.name}</span>
-          </button>
-          
-          <div className={`absolute right-0 top-full mt-2 w-40 ${theme.cardBg} backdrop-blur-xl border ${theme.cardBorder} rounded-2xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 overflow-hidden`}>
-            {(Object.keys(THEMES) as ThemeName[]).map((t) => (
-              <button
-                key={t}
-                onClick={() => setThemeName(t)}
-                className={`w-full text-left px-4 py-3 text-sm font-medium transition-colors hover:bg-black/5 ${themeName === t ? theme.accent : theme.textMuted} capitalize`}
-              >
-                {t}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <label className={`flex items-center justify-center w-12 h-12 ${theme.cardBg} backdrop-blur-md rounded-full cursor-pointer hover:opacity-80 transition-all shadow-sm border ${theme.cardBorder} group`}>
-          <ImagePlus className={`${theme.accent} group-hover:scale-110 transition-transform`} size={20} />
-          <input type="file" className="hidden" accept="image/*" disabled={isUploadingImage} onChange={(e) => void handleImageUpload(e, setHeroImage)} />
-        </label>
-      </div>
+      <ActionMenu
+        userLabel={viewerName}
+        themeName={themeName}
+        setThemeName={setThemeName}
+        canOpenAdminPanel={canOpenAdminPanel}
+        onOpenAdminPanel={onOpenAdminPanel}
+        onOpenChangePassword={onOpenChangePassword}
+        onLogout={onLogout}
+      />
 
       {/* Hero Area */}
-      <div className="relative min-h-[55vh] w-full flex flex-col items-center justify-start pt-12 md:pt-16 pb-10">
+      <div className="group/hero relative min-h-[34vh] md:min-h-[36vh] w-full flex flex-col items-center justify-start pt-8 md:pt-10 pb-2">
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           <img src={heroImage} alt="Hero Background" className={`w-full h-full object-cover blur-md scale-105 opacity-70 ${theme.imageFilter}`} />
           <div className={`absolute inset-0 bg-gradient-to-b ${theme.headerBg}`}></div>
@@ -1079,7 +1279,7 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
           <div className="relative group">
             <motion.div 
               initial={{ scale: 0.9, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }} transition={{ duration: 0.8, type: "spring", bounce: 0.4 }}
-              className={`w-28 h-28 md:w-32 md:h-32 rounded-full overflow-hidden border-[4px] border-white shadow-[0_8px_24px_rgba(244,114,182,0.25)] mb-5 relative z-10 ${theme.cardBg}`}
+              className={`w-20 h-20 md:w-24 md:h-24 rounded-full overflow-hidden border-[4px] border-white shadow-[0_8px_24px_rgba(244,114,182,0.25)] mb-3.5 relative z-10 ${theme.cardBg}`}
             >
               <img
                 src={avatarImage}
@@ -1122,7 +1322,7 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
             </button>
           </div>
 
-          <div className="mb-3 flex justify-center">
+          <div className="mb-2 flex justify-center">
             <motion.h1
               initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: 0.8, delay: 0.2, ease: 'easeOut' }}
               onClick={handleRenameCurrentSpace}
@@ -1135,14 +1335,14 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
               role="button"
               tabIndex={0}
               aria-label="修改空间名称"
-              className={`${theme.fontTitle} text-4xl md:text-5xl font-extrabold ${theme.textMain} drop-shadow-sm text-center cursor-pointer hover:opacity-80 transition-opacity focus-visible:outline-none`}
+              className={`${theme.fontTitle} text-3xl md:text-4xl font-extrabold ${theme.textMain} drop-shadow-sm text-center cursor-pointer hover:opacity-80 transition-opacity focus-visible:outline-none`}
             >
               {space.name}
             </motion.h1>
           </div>
           <motion.p 
             initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: 0.8, delay: 0.4, ease: "easeOut" }}
-            className={`${theme.accent} text-sm md:text-base tracking-[0.3em] uppercase mb-5 font-bold`}
+            className={`${theme.accent} text-xs md:text-sm tracking-[0.25em] uppercase mb-2 font-bold`}
           >
             {/* Optional English name or subtitle could go here */}
           </motion.p>
@@ -1161,7 +1361,7 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
               role="button"
               tabIndex={0}
               aria-label="修改简介"
-              className={`${theme.textMuted} leading-relaxed font-medium text-base md:text-lg whitespace-pre-line px-2 md:px-3 text-center cursor-pointer hover:opacity-80 transition-opacity focus-visible:outline-none`}
+              className={`${theme.textMuted} leading-relaxed font-medium text-sm md:text-base whitespace-pre-line px-2 md:px-3 text-center cursor-pointer hover:opacity-80 transition-opacity focus-visible:outline-none`}
             >
               {spaceDescription}
             </p>
@@ -1169,9 +1369,9 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
           
           <motion.div
             initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: 0.8, delay: 0.8, ease: 'easeOut' }}
-            className="mt-6 flex justify-center"
+            className="mt-3 flex justify-center"
           >
-            <div className={`flex flex-wrap justify-center gap-6 md:gap-10 ${theme.textMuted} font-medium text-sm md:text-base ${theme.cardBg} backdrop-blur-md px-8 py-4 rounded-full border ${theme.cardBorder} shadow-sm`}>
+            <div className={`flex flex-wrap justify-center gap-4 md:gap-7 ${theme.textMuted} font-medium text-xs md:text-sm ${theme.cardBg} backdrop-blur-md px-6 py-2.5 rounded-full border ${theme.cardBorder} shadow-sm`}>
               <button
                 type="button"
                 onClick={handleEditDateCapsule}
@@ -1191,17 +1391,32 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
             </div>
           </motion.div>
         </div>
+        <label
+          title="上传头图"
+          className={`absolute right-4 bottom-3 z-20 inline-flex h-9 w-9 items-center justify-center rounded-full border ${theme.cardBorder} ${theme.cardBg} shadow-sm backdrop-blur-md transition-all duration-200 ${
+            isUploadingImage ? 'cursor-not-allowed opacity-55' : 'cursor-pointer'
+          } opacity-100 md:opacity-0 md:group-hover/hero:opacity-100 md:group-focus-within/hero:opacity-100`}
+        >
+          <ImagePlus className={theme.accent} size={17} />
+          <input
+            type="file"
+            className="hidden"
+            accept="image/*"
+            disabled={isUploadingImage}
+            onChange={(e) => void handleImageUpload(e, setHeroImage)}
+          />
+        </label>
       </div>
 
       {/* Tabs Navigation - Sticky with Backdrop Blur */}
       <div className={`sticky top-0 z-30 ${theme.cardBg} backdrop-blur-md border-b ${theme.cardBorder} shadow-sm`}>
         <div className="max-w-4xl mx-auto px-6">
-          <div className="flex justify-center pt-4">
+          <div className="flex justify-center pt-2 pb-1">
             {['timeline', 'album', 'treehole'].map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab as any)}
-                className={`pb-4 w-24 flex flex-col items-center text-lg font-bold transition-colors relative ${
+                className={`pb-2.5 w-24 flex flex-col items-center text-base md:text-lg font-bold transition-colors relative ${
                   activeTab === tab ? theme.accent : theme.navInactive
                 }`}
               >
@@ -1218,7 +1433,7 @@ function SpaceDetail({ space, onBack, onUpdateSpace, themeName, setThemeName }: 
       </div>
 
       {/* Content Area */}
-      <div className="max-w-5xl mx-auto px-6 pt-12 pb-32 min-h-[50vh]">
+      <div className="max-w-5xl mx-auto px-6 pt-6 pb-32 min-h-[50vh]">
         <AnimatePresence mode="wait">
           {/* Timeline View (Event Folders) */}
           {activeTab === 'timeline' && (
@@ -1623,7 +1838,7 @@ function TimelineView({
           style={{ scaleY }}
         />
         
-        <div className={cinemaMode ? 'space-y-4' : 'space-y-7'}>
+        <div className={cinemaMode ? 'space-y-4' : 'space-y-5'}>
           {groupedEntries.map((group) => (
             <div key={group.year} id={`year-${group.year}`} className="relative scroll-mt-32">
               <motion.div
@@ -1631,7 +1846,7 @@ function TimelineView({
                 whileInView={{ opacity: 1, scale: 1, y: 0 }}
                 viewport={{ once: true, margin: "-100px" }}
                 transition={{ duration: 0.6, type: "spring" }}
-                className={`relative z-10 flex items-center justify-center ${cinemaMode ? 'mb-3' : 'mb-4'}`}
+                className={`relative z-10 flex items-center justify-center ${cinemaMode ? 'mb-3' : 'mb-2.5'}`}
               >
                 {cinemaMode ? (
                   <div className="relative flex items-center gap-4 px-2 py-1">
@@ -1647,7 +1862,7 @@ function TimelineView({
                 )}
               </motion.div>
 
-              <div className={cinemaMode ? 'space-y-2.5' : 'space-y-2'}>
+              <div className={cinemaMode ? 'space-y-2.5' : 'space-y-1'}>
                 {group.entries.map((entry) => {
                   const globalIndex = entries.findIndex(e => e.id === entry.id);
                   return (
@@ -1704,13 +1919,13 @@ function TimelineFolderClassic({
     const ratio = Number.isFinite(coverRatio) && coverRatio > 0 ? coverRatio : 1;
     const imageWidth =
       ratio >= 1
-        ? Math.min(276, 172 + (ratio - 1) * 74)
-        : Math.max(124, 172 * ratio);
-    return Math.round(Math.min(296, Math.max(156, imageWidth + 24)));
+        ? Math.min(252, 156 + (ratio - 1) * 68)
+        : Math.max(116, 156 * ratio);
+    return Math.round(Math.min(272, Math.max(144, imageWidth + 18)));
   }, [coverRatio]);
 
   return (
-    <div className="relative w-full mb-0.5">
+    <div className="relative w-full mb-0">
       <div className={`relative flex flex-col md:flex-row items-start ${isEven ? 'md:flex-row-reverse' : ''}`}>
         <motion.div 
           initial={{ scale: 0 }}
@@ -1720,14 +1935,12 @@ function TimelineFolderClassic({
           className={`absolute left-[9px] md:left-1/2 w-[9px] h-[9px] rounded-full ${theme.bgAccent} md:-translate-x-1/2 mt-4 ring-4 ${theme.dotRing} shadow-sm z-10`}
         ></motion.div>
 
-        <div className={`ml-12 md:ml-0 md:w-1/2 ${isEven ? 'md:pl-9' : 'md:pr-9'} py-0.5 flex ${isEven ? 'justify-start' : 'justify-end'}`}>
+        <div className={`ml-12 md:ml-0 md:w-1/2 ${isEven ? 'md:pl-7' : 'md:pr-7'} py-0 flex ${isEven ? 'justify-start' : 'justify-end'}`}>
           <div
             className="relative w-full group"
             style={{ width: `${cardWidth}px`, maxWidth: 'calc(100vw - 4.75rem)' }}
           >
-            <div className={`absolute -top-2.5 ${isEven ? 'right-7 rotate-[4deg]' : 'left-7 rotate-[-3deg]'} w-14 h-5 ${theme.tape} backdrop-blur-sm z-30 mix-blend-multiply shadow-sm transition-transform duration-300 group-hover:-translate-y-1`}></div>
-            
-            <div className={`relative ${theme.cardBg} p-3 shadow-sm border ${theme.cardBorder} transition-all duration-300 w-full hover:shadow-md hover:-translate-y-0.5 z-20`}>
+            <div className={`relative ${theme.cardBg} p-2.5 shadow-sm border ${theme.cardBorder} transition-all duration-300 w-full hover:shadow-md hover:-translate-y-0.5 z-20`}>
               <div className="absolute top-3 right-3 z-30 flex items-center gap-1 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto transition-opacity">
                 <button
                   type="button"
@@ -1765,8 +1978,8 @@ function TimelineFolderClassic({
                   )}
                 </div>
                 
-                <div className="mt-2.5 text-left relative">
-                  <div className="flex items-center justify-between mb-1.5">
+                <div className="mt-2 text-left relative">
+                  <div className="flex items-center justify-between mb-1">
                     <span className={`font-mono ${theme.textMuted} text-[9px] tracking-[0.18em] uppercase`}>{entry.date}</span>
                     {entry.images.length > 0 && (
                       <motion.div
@@ -1792,7 +2005,7 @@ function TimelineFolderClassic({
                     exit={{ opacity: 1, height: 'auto' }}
                     className="overflow-hidden"
                   >
-                    <div className={`pt-3 mt-2 border-t ${theme.cardBorder}`}>
+                    <div className={`pt-2 mt-1.5 border-t ${theme.cardBorder}`}>
                       <p className={`${theme.textMuted} font-serif leading-relaxed text-[13px] text-left whitespace-pre-line ${isExpanded ? '' : 'line-clamp-2'}`}>{entry.description}</p>
                     </div>
                   </motion.div>
@@ -3416,8 +3629,10 @@ function Portal({
           animate={{ opacity: 1, y: 0 }}
           className="text-center mb-24"
         >
-          <div className="group relative inline-flex items-center justify-center pr-10 md:pr-12 mb-6">
+          <div className="group relative inline-flex flex-col items-center">
+            <span aria-hidden="true" className="absolute left-full top-0 h-full w-12" />
             <h1 className="text-3xl md:text-4xl font-serif text-stone-800 tracking-[0.2em]">{portalTitle}</h1>
+            <div className="mt-6 w-12 h-[1px] bg-stone-400"></div>
             <button
               type="button"
               onClick={() => {
@@ -3425,19 +3640,22 @@ function Portal({
                 setIsEditingPortalTitle(true);
               }}
               aria-label="修改空间页标题"
-              className={`absolute right-0 top-1/2 -translate-y-1/2 w-8 h-8 md:w-9 md:h-9 flex items-center justify-center rounded-full ${theme.cardBg} border ${theme.cardBorder} ${theme.accent} shadow-sm invisible opacity-0 pointer-events-none group-hover:visible group-hover:opacity-100 group-hover:pointer-events-auto focus-visible:visible focus-visible:opacity-100 focus-visible:pointer-events-auto hover:opacity-80 transition-all duration-200`}
+              className={`absolute left-full ml-2 top-1/2 -translate-y-1/2 w-8 h-8 md:w-9 md:h-9 flex items-center justify-center rounded-full ${theme.cardBg} border ${theme.cardBorder} ${theme.accent} shadow-sm invisible opacity-0 pointer-events-none group-hover:visible group-hover:opacity-100 group-hover:pointer-events-auto focus-visible:visible focus-visible:opacity-100 focus-visible:pointer-events-auto hover:opacity-80 transition-all duration-200`}
             >
               <Pencil size={14} />
             </button>
           </div>
-          <div className="w-12 h-[1px] bg-stone-400 mx-auto"></div>
         </motion.div>
 
         <div className="flex flex-wrap justify-center items-center gap-12 md:gap-20">
           {spaces.map((space, index) => {
             // Pseudo-random rotation and vertical offset for the "handmade disorder" feel
             const rotation = index % 2 === 0 ? (index % 3 === 0 ? -3 : 2) : (index % 3 === 0 ? 4 : -2);
-            const translateY = index % 2 !== 0 ? 'translate-y-8 md:translate-y-16' : '';
+            const translateY = index % 2 !== 0
+              ? index === 1
+                ? 'translate-y-4 md:translate-y-10'
+                : 'translate-y-8 md:translate-y-16'
+              : '';
 
             return (
               <motion.div
@@ -3787,7 +4005,7 @@ export default function App() {
     const stored = localStorage.getItem('journal-theme') as ThemeName | null;
     return stored && stored in THEMES ? stored : 'default';
   });
-  const [portalTitle, setPortalTitle] = useState(() => localStorage.getItem('journal-portal-title') || '我的手账空间');
+  const [portalTitle, setPortalTitle] = useState(() => localStorage.getItem('journal-portal-title') || '记忆空间');
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [spaces, setSpaces] = useState<Space[]>([]);
   const [currentSpaceId, setCurrentSpaceId] = useState<string | null>(null);
@@ -4139,6 +4357,8 @@ export default function App() {
 
   const currentTheme = THEMES[themeName];
   const currentSpace = currentSpaceId ? spaces.find((space) => space.id === currentSpaceId) ?? null : null;
+  const canOpenAdminPanel = currentUser ? canAccessAdminDashboard(currentUser.email) : false;
+  const isPortalView = currentSpaceId === null || !currentSpace;
 
   if (isBootstrapping) {
     return (
@@ -4171,32 +4391,19 @@ export default function App() {
     <ThemeContext.Provider value={currentTheme}>
       <NoticeContext.Provider value={notify}>
         <div className={`min-h-screen transition-colors duration-500 ${currentTheme.globalBg} ${currentTheme.textMain} ${currentTheme.fontMain}`}>
-          <div className="fixed right-3 top-3 z-[120] flex items-center gap-2 bg-white/85 px-3 py-1.5 text-xs text-stone-700 shadow-sm border border-stone-200">
-            <span className="max-w-[140px] truncate">{currentUser.nickname}</span>
-            <button
-              type="button"
-              onClick={openAdminPanel}
-              className="text-stone-600 hover:text-stone-900 underline"
-            >
-              管理面板
-            </button>
-            <button
-              type="button"
-              onClick={openChangePasswordDialog}
-              className="text-stone-600 hover:text-stone-900 underline"
-            >
-              修改密码
-            </button>
-            <button
-              type="button"
-              onClick={() => void handleLogout()}
-              className="text-stone-600 hover:text-stone-900 underline"
-            >
-              退出登录
-            </button>
-          </div>
+          {isPortalView ? (
+            <ActionMenu
+              userLabel={currentUser.nickname}
+              themeName={themeName}
+              setThemeName={setThemeName}
+              canOpenAdminPanel={canOpenAdminPanel}
+              onOpenAdminPanel={openAdminPanel}
+              onOpenChangePassword={openChangePasswordDialog}
+              onLogout={() => void handleLogout()}
+            />
+          ) : null}
           <AnimatePresence mode="wait">
-            {currentSpaceId === null || !currentSpace ? (
+            {isPortalView ? (
               <motion.div key="portal" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.5 }}>
                 <Portal 
                   spaces={spaces} 
@@ -4216,6 +4423,11 @@ export default function App() {
                   onUpdateSpace={handleUpdateSpace}
                   themeName={themeName}
                   setThemeName={setThemeName}
+                  viewerName={currentUser.nickname}
+                  canOpenAdminPanel={canOpenAdminPanel}
+                  onOpenAdminPanel={openAdminPanel}
+                  onOpenChangePassword={openChangePasswordDialog}
+                  onLogout={() => void handleLogout()}
                 />
               </motion.div>
             )}
