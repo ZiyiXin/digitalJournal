@@ -27,8 +27,7 @@ LEGACY_OWNER_EMAIL=legacy@digital-journal.local
 LEGACY_OWNER_PASSWORD=ChangeMeNow123!
 LEGACY_OWNER_NICKNAME=Legacy Owner
 STORAGE_CAPACITY_GB=5
-# 可选：限制可访问后台面板的邮箱（逗号分隔），不填则所有登录用户可访问
-# ADMIN_EMAILS=admin@example.com
+# 后台管理面板仅允许 legacy@digital-journal.local 访问
 ```
 
 ### 3) 启动开发环境

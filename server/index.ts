@@ -90,22 +90,10 @@ function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-function getAdminEmailAllowList(): string[] {
-  const raw = process.env.ADMIN_EMAILS;
-  if (!raw) return [];
-
-  const emails = raw
-    .split(',')
-    .map((item) => normalizeEmail(item))
-    .filter(Boolean);
-
-  return Array.from(new Set(emails));
-}
+const LEGACY_ADMIN_EMAIL = 'legacy@digital-journal.local';
 
 function canAccessAdminDashboard(email: string): boolean {
-  const allowList = getAdminEmailAllowList();
-  if (allowList.length === 0) return true;
-  return allowList.includes(normalizeEmail(email));
+  return normalizeEmail(email) === LEGACY_ADMIN_EMAIL;
 }
 
 app.use(express.json({limit: '10mb'}));
