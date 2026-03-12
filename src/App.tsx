@@ -2901,7 +2901,13 @@ const AlbumStack: React.FC<{
                   zIndex: 10 - i
                 }}
               >
-                <SafeImage src={getTimelineImagePreviewUrl(img)} className={`photo-stable w-full h-full object-cover opacity-70 ${lightconeMode ? 'brightness-[0.65] saturate-[0.9]' : 'grayscale-[30%]'}`} />
+                <div
+                  className={`h-full w-full ${
+                    lightconeMode
+                      ? 'bg-[linear-gradient(180deg,rgba(13,27,42,0.88),rgba(8,18,29,0.82))]'
+                      : 'bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(244,241,234,0.94))]'
+                  }`}
+                />
               </div>
             ))}
             
