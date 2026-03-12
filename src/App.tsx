@@ -67,7 +67,7 @@ function canAccessAdminDashboard(email: string): boolean {
 }
 
 // --- Themes ---
-export type ThemeName = 'default' | 'anime' | 'scifi' | 'retro' | 'fantasy' | 'cinema';
+export type ThemeName = 'default' | 'anime' | 'scifi' | 'retro' | 'fantasy' | 'cinema' | 'lightcone';
 
 export const THEMES = {
   default: {
@@ -195,9 +195,39 @@ export const THEMES = {
     button: 'bg-gradient-to-r from-[#FF9A62] to-[#F4C96B] hover:from-[#FFAE78] hover:to-[#FFD98D] text-[#111827]',
     dotRing: 'ring-[#09111A]',
     tape: 'bg-[#FFD8B5]/15',
+  },
+  lightcone: {
+    name: 'lightcone',
+    globalBg: 'bg-[#06111B]',
+    headerBg: 'from-[#10243A]/45 via-[#07111D]/78 to-[#06111B]',
+    textMain: 'text-[#EDF4FF]',
+    textMuted: 'text-[#90A5C0]',
+    accent: 'text-[#8AE7FF]',
+    borderAccent: 'border-[#8AE7FF]',
+    bgAccent: 'bg-[#8AE7FF]',
+    cardBg: 'bg-[#0D1B2A]/72 backdrop-blur-xl',
+    cardBorder: 'border-[#35516C]/70 border',
+    cardShadow: 'shadow-[0_24px_60px_rgba(2,10,22,0.42)]',
+    radius: 'rounded-[1.75rem]',
+    fontMain: 'font-lightcone-body',
+    fontTitle: 'font-lightcone-title tracking-[0.14em]',
+    imageFilter: 'contrast-110 saturate-[1.08] brightness-[1.03]',
+    navInactive: 'text-[#5F7893] hover:text-[#D8EAFF]',
+    button: 'bg-[linear-gradient(135deg,#81E4FF_0%,#A9C6FF_50%,#FFD38D_100%)] hover:opacity-95 text-[#06111B] shadow-[0_16px_36px_rgba(129,228,255,0.2)]',
+    dotRing: 'ring-[#06111B]',
+    tape: 'bg-[#C8DFFF]/16',
   }
 };
-const THEME_OPTIONS: ThemeName[] = ['default', 'anime', 'scifi', 'retro', 'fantasy', 'cinema'];
+const THEME_OPTIONS: ThemeName[] = ['default', 'anime', 'scifi', 'retro', 'fantasy', 'cinema', 'lightcone'];
+const THEME_LABELS: Record<ThemeName, string> = {
+  default: 'Default',
+  anime: 'Anime',
+  scifi: 'Sci-Fi',
+  retro: 'Retro',
+  fantasy: 'Fantasy',
+  cinema: 'Cinema',
+  lightcone: 'Lightcone',
+};
 
 export const ThemeContext = React.createContext(THEMES.default);
 export const useTheme = () => React.useContext(ThemeContext);
@@ -230,6 +260,7 @@ const normalizeAvatarFocus = (focus?: Partial<AvatarFocus>): AvatarFocus => ({
   scale: clampValue(Number.isFinite(focus?.scale ?? NaN) ? (focus?.scale as number) : DEFAULT_AVATAR_FOCUS.scale, AVATAR_SCALE_MIN, AVATAR_SCALE_MAX),
 });
 const isCinemaTheme = (theme: {name: string}) => theme.name === 'cinema';
+const isLightconeTheme = (theme: {name: string}) => theme.name === 'lightcone';
 
 const createInfoCapsuleId = () => `capsule-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -573,7 +604,7 @@ function ActionMenu({
               <button type="button" onClick={() => setIsThemeMenuOpen((prev) => !prev)} className={actionButtonClass}>
                 <Palette className={theme.accent} size={16} />
                 <span>主题</span>
-                <span className={`text-xs capitalize ${theme.textMuted}`}>{themeName}</span>
+                <span className={`text-xs ${theme.textMuted}`}>{THEME_LABELS[themeName]}</span>
                 <ChevronDown size={14} className={`${theme.textMuted} transition-transform ${isThemeMenuOpen ? 'rotate-180' : ''}`} />
               </button>
 
@@ -591,9 +622,9 @@ function ActionMenu({
                         key={t}
                         type="button"
                         onClick={() => handleThemeChange(t)}
-                        className={`${themeOptionClass} ${themeName === t ? theme.accent : theme.textMuted} capitalize`}
+                        className={`${themeOptionClass} ${themeName === t ? theme.accent : theme.textMuted}`}
                       >
-                        {t}
+                        {THEME_LABELS[t]}
                       </button>
                     ))}
                   </motion.div>
@@ -712,6 +743,7 @@ function SpaceDetail({
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
   const confirmResolverRef = useRef<((confirmed: boolean) => void) | null>(null);
   const notify = useNotice();
+  const lightconeMode = isLightconeTheme(theme);
 
   const openTextPrompt = useCallback((config: Omit<TextPromptDialogState, 'value'> & { defaultValue: string }) => (
     new Promise<string | null>((resolve) => {
@@ -1267,7 +1299,15 @@ function SpaceDetail({
   };
 
   return (
-    <div className={`min-h-screen transition-colors duration-500 selection:bg-pink-100 selection:text-pink-600 ${theme.globalBg} ${theme.textMain} ${theme.fontMain}`}>
+    <div className={`min-h-screen transition-colors duration-500 selection:bg-pink-100 selection:text-pink-600 ${theme.globalBg} ${theme.textMain} ${theme.fontMain} ${lightconeMode ? 'theme-lightcone relative isolate overflow-hidden' : ''}`}>
+      {lightconeMode && (
+        <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+          <div className="lightcone-river absolute inset-x-[-22%] top-[-6%] h-[42rem] rounded-[50%] blur-3xl" />
+          <div className="lightcone-dust absolute left-[-10%] top-[16rem] h-[28rem] w-[28rem] rounded-full blur-3xl" />
+          <div className="lightcone-dust absolute right-[-12%] top-[30rem] h-[30rem] w-[30rem] rounded-full blur-3xl" />
+          <div className="lightcone-grid absolute inset-0 opacity-70" />
+        </div>
+      )}
       {/* Back Button */}
       <button 
         onClick={onBack}
@@ -1288,17 +1328,23 @@ function SpaceDetail({
       />
 
       {/* Hero Area */}
-      <div className="group/hero relative min-h-[34vh] md:min-h-[36vh] w-full flex flex-col items-center justify-start pt-8 md:pt-10 pb-2">
+      <div className={`group/hero relative min-h-[34vh] md:min-h-[36vh] w-full flex flex-col items-center justify-start pt-8 md:pt-10 pb-2 ${lightconeMode ? 'lightcone-hero-shell' : ''}`}>
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           <img src={heroImage} alt="Hero Background" className={`w-full h-full object-cover blur-md scale-105 opacity-70 ${theme.imageFilter}`} />
           <div className={`absolute inset-0 bg-gradient-to-b ${theme.headerBg}`}></div>
+          {lightconeMode && (
+            <>
+              <div className="lightcone-hero-lens absolute left-1/2 top-[-18%] h-[24rem] w-[24rem] -translate-x-1/2 rounded-full blur-3xl" />
+              <div className="lightcone-hero-lines absolute inset-x-[8%] top-[14%] h-[20rem]" />
+            </>
+          )}
         </div>
 
         <div className="relative z-10 flex flex-col items-center text-center px-6">
           <div className="relative group">
             <motion.div 
               initial={{ scale: 0.9, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }} transition={{ duration: 0.8, type: "spring", bounce: 0.4 }}
-              className={`w-20 h-20 md:w-24 md:h-24 rounded-full overflow-hidden border-[4px] border-white shadow-[0_8px_24px_rgba(244,114,182,0.25)] mb-3.5 relative z-10 ${theme.cardBg}`}
+              className={`w-20 h-20 md:w-24 md:h-24 rounded-full overflow-hidden border-[4px] border-white shadow-[0_8px_24px_rgba(244,114,182,0.25)] mb-3.5 relative z-10 ${theme.cardBg} ${lightconeMode ? 'lightcone-avatar-shell' : ''}`}
             >
               <img
                 src={avatarImage}
@@ -1354,7 +1400,7 @@ function SpaceDetail({
               role="button"
               tabIndex={0}
               aria-label="修改空间名称"
-              className={`${theme.fontTitle} text-3xl md:text-4xl font-extrabold ${theme.textMain} drop-shadow-sm text-center cursor-pointer hover:opacity-80 transition-opacity focus-visible:outline-none`}
+              className={`${theme.fontTitle} text-3xl md:text-4xl font-extrabold ${theme.textMain} drop-shadow-sm text-center cursor-pointer hover:opacity-80 transition-opacity focus-visible:outline-none ${lightconeMode ? 'lightcone-title-glow' : ''}`}
             >
               {space.name}
             </motion.h1>
@@ -1363,11 +1409,11 @@ function SpaceDetail({
             initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: 0.8, delay: 0.4, ease: "easeOut" }}
             className={`${theme.accent} text-xs md:text-sm tracking-[0.25em] uppercase mb-2 font-bold`}
           >
-            {/* Optional English name or subtitle could go here */}
+            {lightconeMode ? 'Memory Fragments Become A Light Cone' : ''}
           </motion.p>
           <motion.div
             initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: 0.8, delay: 0.6, ease: "easeOut" }}
-            className="w-fit max-w-xl mx-auto"
+            className={`w-fit max-w-xl mx-auto ${lightconeMode ? 'lightcone-copy-panel' : ''}`}
           >
             <p
               onClick={handleEditDescription}
@@ -1390,7 +1436,7 @@ function SpaceDetail({
             initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: 0.8, delay: 0.8, ease: 'easeOut' }}
             className="mt-3 flex justify-center"
           >
-            <div className={`flex flex-wrap justify-center gap-4 md:gap-7 ${theme.textMuted} font-medium text-xs md:text-sm ${theme.cardBg} backdrop-blur-md px-6 py-2.5 rounded-full border ${theme.cardBorder} shadow-sm`}>
+            <div className={`flex flex-wrap justify-center gap-4 md:gap-7 ${theme.textMuted} font-medium text-xs md:text-sm ${theme.cardBg} backdrop-blur-md px-6 py-2.5 rounded-full border ${theme.cardBorder} shadow-sm ${lightconeMode ? 'lightcone-info-pill' : ''}`}>
               <button
                 type="button"
                 onClick={handleEditDateCapsule}
@@ -1428,7 +1474,7 @@ function SpaceDetail({
       </div>
 
       {/* Tabs Navigation - Sticky with Backdrop Blur */}
-      <div className={`sticky top-0 z-30 ${theme.cardBg} backdrop-blur-md border-b ${theme.cardBorder} shadow-sm`}>
+      <div className={`sticky top-0 z-30 ${theme.cardBg} backdrop-blur-md border-b ${theme.cardBorder} shadow-sm ${lightconeMode ? 'lightcone-tabs-shell' : ''}`}>
         <div className="max-w-4xl mx-auto px-6">
           <div className="flex justify-center pt-2 pb-1">
             {['timeline', 'album', 'treehole'].map((tab) => (
@@ -1452,7 +1498,7 @@ function SpaceDetail({
       </div>
 
       {/* Content Area */}
-      <div className="max-w-5xl mx-auto px-6 pt-6 pb-32 min-h-[50vh]">
+      <div className={`max-w-5xl mx-auto px-6 pt-6 pb-32 min-h-[50vh] ${lightconeMode ? 'lightcone-content-shell' : ''}`}>
         <AnimatePresence mode="wait">
           {/* Timeline View (Event Folders) */}
           {activeTab === 'timeline' && (
@@ -1493,29 +1539,33 @@ function SpaceDetail({
                 <motion.div 
                   key={msg.id}
                   initial={{ opacity: 0, scale: 0.9, rotate: msg.rotation - 5 }} animate={{ opacity: 1, scale: 1, rotate: msg.rotation }} transition={{ duration: 0.5, delay: (i % 10) * 0.1, type: "spring" }}
-                  className={`${msg.color} p-8 rounded-3xl shadow-[0_4px_20px_rgba(244,114,182,0.06)] hover:shadow-[0_8px_30px_rgba(244,114,182,0.12)] transition-shadow duration-300 relative border border-white`}
+                  className={
+                    lightconeMode
+                      ? 'lightcone-shard-card p-8 rounded-[2rem] shadow-[0_22px_50px_rgba(2,10,22,0.34)] transition-shadow duration-300 relative border border-[#35516C]/65'
+                      : `${msg.color} p-8 rounded-3xl shadow-[0_4px_20px_rgba(244,114,182,0.06)] hover:shadow-[0_8px_30px_rgba(244,114,182,0.12)] transition-shadow duration-300 relative border border-white`
+                  }
                 >
                   <div className="absolute top-3 right-3 flex items-center gap-1">
                     <button
                       type="button"
                       onClick={() => handleEditTreeholeEntry(msg)}
-                      className={`w-8 h-8 flex items-center justify-center rounded-full bg-white/70 ${theme.accent} hover:opacity-80 transition-colors`}
+                      className={`w-8 h-8 flex items-center justify-center rounded-full ${lightconeMode ? 'bg-[#12263B]/88 border border-[#3D5975]/70' : 'bg-white/70'} ${theme.accent} hover:opacity-80 transition-colors`}
                     >
                       <Pencil size={14} />
                     </button>
                     <button
                       type="button"
                       onClick={() => handleDeleteTreeholeEntry(msg.id)}
-                      className={`w-8 h-8 flex items-center justify-center rounded-full bg-white/70 ${theme.accent} hover:opacity-80 transition-colors`}
+                      className={`w-8 h-8 flex items-center justify-center rounded-full ${lightconeMode ? 'bg-[#12263B]/88 border border-[#3D5975]/70' : 'bg-white/70'} ${theme.accent} hover:opacity-80 transition-colors`}
                     >
                       <Trash2 size={14} />
                     </button>
                   </div>
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-14 h-6 bg-white/80 backdrop-blur-sm shadow-[0_2px_5px_rgba(0,0,0,0.05)] rotate-[-2deg] rounded-sm"></div>
-                  <p className="font-medium text-stone-700 text-lg leading-relaxed mb-8 mt-2 whitespace-pre-wrap">{msg.text}</p>
+                  <div className={`absolute -top-3 left-1/2 -translate-x-1/2 w-14 h-6 ${lightconeMode ? 'bg-[linear-gradient(90deg,rgba(138,231,255,0.28),rgba(255,211,141,0.24))] border border-white/8 shadow-[0_8px_24px_rgba(8,20,34,0.32)]' : 'bg-white/80 shadow-[0_2px_5px_rgba(0,0,0,0.05)]'} backdrop-blur-sm rotate-[-2deg] rounded-sm`}></div>
+                  <p className={`font-medium text-lg leading-relaxed mb-8 mt-2 whitespace-pre-wrap ${lightconeMode ? 'text-[#E7F1FF]' : 'text-stone-700'}`}>{msg.text}</p>
                   <div className="text-right flex items-center justify-end gap-1">
-                    <Heart size={12} className="text-pink-300 fill-pink-300 opacity-70" />
-                    <span className="text-stone-500 text-xs tracking-widest font-medium opacity-80">{msg.date}</span>
+                    <Heart size={12} className={lightconeMode ? 'text-[#8AE7FF] fill-[#8AE7FF] opacity-70' : 'text-pink-300 fill-pink-300 opacity-70'} />
+                    <span className={`${lightconeMode ? 'text-[#9AB0C9]' : 'text-stone-500'} text-xs tracking-widest font-medium opacity-80`}>{msg.date}</span>
                   </div>
                 </motion.div>
               ))}
@@ -1710,6 +1760,7 @@ function TimelineView({
 }) {
   const theme = useTheme();
   const cinemaMode = isCinemaTheme(theme);
+  const lightconeMode = isLightconeTheme(theme);
   const containerRef = React.useRef<HTMLDivElement>(null);
   const { scrollYProgress } = useScroll({
     target: containerRef,
@@ -1782,11 +1833,21 @@ function TimelineView({
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  const timelineShellClass = cinemaMode ? 'timeline-cinema-shell max-w-[75rem] gap-4 xl:gap-6' : 'max-w-5xl';
-  const railBackgroundClass = cinemaMode ? 'w-px bg-white/10 shadow-[0_0_26px_rgba(255,154,98,0.14)]' : `w-[2px] ${theme.cardBorder}`;
+  const timelineShellClass = cinemaMode
+    ? 'timeline-cinema-shell max-w-[75rem] gap-4 xl:gap-6'
+    : lightconeMode
+      ? 'lightcone-timeline-shell max-w-[78rem] gap-4 xl:gap-8'
+      : 'max-w-5xl';
+  const railBackgroundClass = cinemaMode
+    ? 'w-px bg-white/10 shadow-[0_0_26px_rgba(255,154,98,0.14)]'
+    : lightconeMode
+      ? 'w-[2px] bg-[linear-gradient(180deg,rgba(125,170,209,0.06),rgba(125,170,209,0.42),rgba(255,211,141,0.14))] shadow-[0_0_34px_rgba(125,170,209,0.18)]'
+      : `w-[2px] ${theme.cardBorder}`;
   const railProgressClass = cinemaMode
     ? 'w-[3px] bg-gradient-to-b from-[#FF9A62] via-[#F4C96B] to-[#86D7F2] shadow-[0_0_28px_rgba(255,154,98,0.45)]'
-    : `w-[2px] ${theme.bgAccent}`;
+    : lightconeMode
+      ? 'w-[4px] bg-[linear-gradient(180deg,#7EE7FF_0%,#A9C6FF_55%,#FFD38D_100%)] shadow-[0_0_32px_rgba(126,231,255,0.45)]'
+      : `w-[2px] ${theme.bgAccent}`;
 
   return (
     <div className={`relative mx-auto flex w-full ${timelineShellClass}`}>
@@ -1794,11 +1855,15 @@ function TimelineView({
         className={`hidden lg:flex flex-col fixed top-1/2 -translate-y-1/2 h-fit items-start z-20 transition-opacity duration-500 ${
           cinemaMode
             ? `left-4 xl:left-10 rounded-[28px] border border-white/10 bg-[#0E1823]/72 px-2.5 py-4 shadow-[0_20px_50px_rgba(0,0,0,0.34)] backdrop-blur-xl ${isScrolled ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`
+            : lightconeMode
+              ? `left-4 xl:left-10 rounded-[30px] border border-[#35516C]/65 bg-[#0A1624]/70 px-3 py-4 shadow-[0_24px_56px_rgba(2,10,22,0.38)] backdrop-blur-2xl ${isScrolled ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`
             : `left-8 xl:left-16 space-y-6 ${isScrolled ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`
         }`}
       >
         {cinemaMode ? (
           <div className="pointer-events-none absolute inset-0 rounded-[28px] bg-[radial-gradient(circle_at_top,rgba(255,154,98,0.15),transparent_48%),linear-gradient(180deg,rgba(255,255,255,0.04),transparent)]" />
+        ) : lightconeMode ? (
+          <div className="pointer-events-none absolute inset-0 rounded-[30px] bg-[radial-gradient(circle_at_top,rgba(126,231,255,0.15),transparent_38%),linear-gradient(180deg,rgba(255,255,255,0.05),transparent_34%),linear-gradient(180deg,rgba(10,22,36,0.28),rgba(10,22,36,0.02))]" />
         ) : (
           <div className="absolute left-[3px] top-2 bottom-2 w-[1px] bg-pink-100/50 -z-10"></div>
         )}
@@ -1814,6 +1879,12 @@ function TimelineView({
                         ? 'translate-x-1 bg-white/8 text-[#FFE4CC]'
                         : 'text-[#6E8093] hover:text-[#FFD5B1]'
                     }`
+                  : lightconeMode
+                    ? `gap-3 rounded-full px-3 py-2 ${
+                        activeYear === g.year
+                          ? 'translate-x-1 bg-[linear-gradient(90deg,rgba(126,231,255,0.12),rgba(169,198,255,0.08),rgba(255,211,141,0.1))] text-[#F5FAFF]'
+                          : 'text-[#6D86A1] hover:text-[#D9EAFF]'
+                      }`
                   : `gap-4 ${activeYear === g.year ? 'text-pink-500 scale-110 translate-x-1' : 'text-stone-400 hover:text-pink-300'}`
               }`}
             >
@@ -1823,6 +1894,10 @@ function TimelineView({
                     ? activeYear === g.year
                       ? 'h-2.5 w-2.5 bg-[#FF9A62] shadow-[0_0_12px_rgba(255,154,98,0.8)]'
                       : 'h-2 w-2 bg-white/25 group-hover:bg-[#FFD5B1]'
+                    : lightconeMode
+                      ? activeYear === g.year
+                        ? 'h-2.5 w-2.5 bg-[#8AE7FF] shadow-[0_0_14px_rgba(138,231,255,0.82)]'
+                        : 'h-2 w-2 bg-[#35516C] group-hover:bg-[#D9EAFF]'
                     : activeYear === g.year
                       ? 'w-2 h-2 bg-pink-400 shadow-[0_0_12px_rgba(244,114,182,0.8)] scale-150'
                       : 'w-2 h-2 bg-stone-200 group-hover:bg-pink-200'
@@ -1834,6 +1909,10 @@ function TimelineView({
                     ? activeYear === g.year
                       ? 'font-serif text-base tracking-[0.18em]'
                       : 'font-medium text-sm tracking-[0.18em]'
+                    : lightconeMode
+                      ? activeYear === g.year
+                        ? 'font-lightcone-title text-base tracking-[0.2em]'
+                        : 'font-lightcone-body text-sm tracking-[0.18em]'
                     : `font-serif tracking-widest ${activeYear === g.year ? 'font-bold text-lg' : 'font-medium text-sm'}`
                 }`}
               >
@@ -1844,11 +1923,17 @@ function TimelineView({
         </div>
       </div>
 
-      <div ref={containerRef} className={`relative mx-auto w-full flex-1 ${cinemaMode ? 'max-w-[70rem]' : 'max-w-3xl'}`}>
+      <div ref={containerRef} className={`relative mx-auto w-full flex-1 ${cinemaMode ? 'max-w-[70rem]' : lightconeMode ? 'max-w-[72rem]' : 'max-w-3xl'}`}>
         {cinemaMode && (
           <>
             <div className="pointer-events-none absolute inset-x-[18%] top-8 bottom-8 -z-10 rounded-full bg-[radial-gradient(circle_at_center,rgba(255,154,98,0.12),transparent_62%)] blur-3xl" />
             <div className="pointer-events-none absolute left-[14px] md:left-1/2 top-0 bottom-0 w-[92px] md:w-[180px] -translate-x-1/2 -z-10 bg-[radial-gradient(circle_at_center,rgba(255,154,98,0.1),transparent_65%)] blur-[52px]" />
+          </>
+        )}
+        {lightconeMode && (
+          <>
+            <div className="pointer-events-none absolute inset-x-[15%] top-12 bottom-12 -z-10 rounded-full bg-[radial-gradient(circle_at_center,rgba(126,231,255,0.08),transparent_60%)] blur-3xl" />
+            <div className="pointer-events-none absolute left-[14px] md:left-1/2 top-0 bottom-0 w-[110px] md:w-[210px] -translate-x-1/2 -z-10 bg-[radial-gradient(circle_at_center,rgba(169,198,255,0.1),transparent_68%)] blur-[58px]" />
           </>
         )}
         <div className={`absolute left-[14px] md:left-1/2 top-0 bottom-0 ${railBackgroundClass} md:-translate-x-1/2 rounded-full`}></div>
@@ -1857,7 +1942,7 @@ function TimelineView({
           style={{ scaleY }}
         />
         
-        <div className={cinemaMode ? 'space-y-4' : 'space-y-5'}>
+        <div className={cinemaMode ? 'space-y-4' : lightconeMode ? 'space-y-6' : 'space-y-5'}>
           {groupedEntries.map((group) => (
             <div key={group.year} id={`year-${group.year}`} className="relative scroll-mt-32">
               <motion.div
@@ -1865,12 +1950,19 @@ function TimelineView({
                 whileInView={{ opacity: 1, scale: 1, y: 0 }}
                 viewport={{ once: true, margin: "-100px" }}
                 transition={{ duration: 0.6, type: "spring" }}
-                className={`relative z-10 flex items-center justify-center ${cinemaMode ? 'mb-3' : 'mb-2.5'}`}
+                className={`relative z-10 flex items-center justify-center ${cinemaMode ? 'mb-3' : lightconeMode ? 'mb-4' : 'mb-2.5'}`}
               >
                 {cinemaMode ? (
                   <div className="relative flex items-center gap-4 px-2 py-1">
                     <span className="text-[10px] uppercase tracking-[0.42em] text-[#8BA0B4]">Archive</span>
                     <span className="font-serif text-xl tracking-[0.26em] text-[#FFE4CC] [text-shadow:0_0_10px_rgba(255,154,98,0.25)]">
+                      {group.year}
+                    </span>
+                  </div>
+                ) : lightconeMode ? (
+                  <div className="lightcone-year-badge relative flex items-center gap-3 rounded-full border border-[#35516C]/65 bg-[#0B1827]/72 px-6 py-2.5 shadow-[0_18px_40px_rgba(2,10,22,0.25)] backdrop-blur-xl">
+                    <span className="text-[10px] uppercase tracking-[0.42em] text-[#7590AE]">Light Cone</span>
+                    <span className="font-lightcone-title text-xl tracking-[0.24em] text-[#F0F6FF]">
                       {group.year}
                     </span>
                   </div>
@@ -1881,7 +1973,7 @@ function TimelineView({
                 )}
               </motion.div>
 
-              <div className={cinemaMode ? 'space-y-2.5' : 'space-y-1'}>
+              <div className={cinemaMode ? 'space-y-2.5' : lightconeMode ? 'space-y-3' : 'space-y-1'}>
                 {group.entries.map((entry) => {
                   const globalIndex = entries.findIndex(e => e.id === entry.id);
                   return (
@@ -1915,6 +2007,9 @@ function TimelineFolder(props: TimelineFolderProps) {
   const theme = useTheme();
   if (isCinemaTheme(theme)) {
     return <TimelineFolderCinema {...props} />;
+  }
+  if (isLightconeTheme(theme)) {
+    return <TimelineFolderLightcone {...props} />;
   }
   return <TimelineFolderClassic {...props} />;
 }
@@ -2066,6 +2161,202 @@ function TimelineFolderClassic({
               )}
             </AnimatePresence>
 
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TimelineFolderLightcone({
+  entry,
+  index,
+  onImageClick,
+  onEditEntry,
+  onDeleteEntry,
+}: TimelineFolderProps) {
+  const theme = useTheme();
+  const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const isEven = index % 2 === 0;
+  const hasImages = entry.images.length > 0;
+  const activeImage = hasImages ? entry.images[activeImageIndex] ?? entry.images[0] : null;
+  const coverFocus = entry.coverFocus ?? { x: 50, y: 42 };
+  const previewImages = entry.images;
+  const previewImageUrl = activeImage?.imageUrl ?? entry.images[0]?.imageUrl ?? TIMELINE_COVER_FALLBACK;
+  const previewFrameRatio = useCoverImageRatio(previewImageUrl);
+  const cardLaneClass = isEven ? 'md:col-start-3 md:justify-self-start' : 'md:col-start-1 md:justify-self-end';
+  const eventSummary = entry.description?.trim() ?? '';
+  const frameSummary = activeImage?.text?.trim() ?? '';
+  const safePreviewRatio = Number.isFinite(previewFrameRatio) && previewFrameRatio > 0 ? previewFrameRatio : 1;
+  const visualPreviewRatio = React.useMemo(
+    () => Math.min(1.45, Math.max(0.78, safePreviewRatio)),
+    [safePreviewRatio],
+  );
+  const previewWidth = React.useMemo(() => {
+    if (visualPreviewRatio >= 1.18) return '13.5rem';
+    if (visualPreviewRatio >= 0.98) return '12rem';
+    return '10.5rem';
+  }, [visualPreviewRatio]);
+  const previewGridStyle = {
+    '--timeline-preview-width': previewWidth,
+  } as React.CSSProperties;
+  const previewFrameStyle = { aspectRatio: `${visualPreviewRatio}` } as React.CSSProperties;
+  const cardMaxWidthClass =
+    visualPreviewRatio >= 1.18 ? 'max-w-[32rem]' :
+    visualPreviewRatio >= 0.95 ? 'max-w-[30.5rem]' :
+    'max-w-[29rem]';
+  const previewObjectPosition = activeImageIndex === 0 ? `${coverFocus.x}% ${coverFocus.y}%` : '50% 50%';
+
+  React.useEffect(() => {
+    setActiveImageIndex(0);
+  }, [entry.id]);
+
+  return (
+    <div className="relative w-full">
+      <div className="relative grid gap-3 pl-10 md:grid-cols-[minmax(0,1fr)_82px_minmax(0,1fr)] md:pl-0">
+        <motion.div
+          initial={{ scale: 0.62, opacity: 0 }}
+          whileInView={{ scale: 1, opacity: 1 }}
+          viewport={{ once: true, margin: '-100px' }}
+          transition={{ duration: 0.48, delay: 0.12, type: 'spring' }}
+          className="absolute left-[7px] top-10 z-20 md:left-1/2 md:-translate-x-1/2"
+        >
+          <span className="lightcone-node-glow absolute left-1/2 top-1/2 h-10 w-10 -translate-x-1/2 -translate-y-1/2 rounded-full blur-xl"></span>
+          <span className={`relative block h-3.5 w-3.5 rounded-full ${theme.bgAccent} ring-4 ${theme.dotRing} shadow-[0_0_22px_rgba(126,231,255,0.54)]`}></span>
+        </motion.div>
+
+        <div className={`min-w-0 ${cardLaneClass}`}>
+          <div className={`w-full ${cardMaxWidthClass}`}>
+            <div className={`lightcone-timeline-card relative overflow-hidden rounded-[30px] border ${theme.cardBorder} ${theme.cardBg} ${theme.cardShadow}`}>
+              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(126,231,255,0.14),transparent_42%),radial-gradient(circle_at_bottom_left,rgba(255,211,141,0.1),transparent_35%),linear-gradient(180deg,rgba(255,255,255,0.05),transparent_40%)]" />
+              <div className="relative p-4 md:p-5">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[10px] uppercase tracking-[0.4em] text-[#7C96B1]">{entry.date}</p>
+                    <h3 className={`${theme.fontTitle} mt-2 text-[1.3rem] leading-tight text-[#F0F6FF] md:text-[1.6rem]`}>{entry.title}</h3>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onEditEntry(entry);
+                      }}
+                      className="rounded-full border border-[#3A5773]/72 bg-[#102033]/80 p-2 text-[#A6EBFF] transition-colors hover:bg-[#162A41]"
+                    >
+                      <Pencil size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDeleteEntry(entry.id);
+                      }}
+                      className="rounded-full border border-[#3A5773]/72 bg-[#102033]/80 p-2 text-[#FFD38D] transition-colors hover:bg-[#162A41]"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </div>
+
+                <div
+                  className="mt-3 grid grid-cols-1 gap-3 sm:items-start sm:[grid-template-columns:var(--timeline-preview-width)_minmax(0,1fr)]"
+                  style={previewGridStyle}
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (activeImage) onImageClick(activeImage.imageUrl, activeImage.text);
+                    }}
+                    className="lightcone-photo-frame relative overflow-hidden rounded-[24px] border border-[#314D68]/72 bg-[#07131E] shadow-[0_16px_30px_rgba(2,10,22,0.32)] transition-[aspect-ratio,transform] duration-300 hover:-translate-y-0.5"
+                    style={previewFrameStyle}
+                  >
+                    {hasImages ? (
+                      <>
+                        <SafeImage
+                          src={previewImageUrl}
+                          alt={entry.title}
+                          className={`absolute inset-0 h-full w-full scale-[1.15] object-cover blur-2xl opacity-45 ${theme.imageFilter}`}
+                          style={{ objectPosition: previewObjectPosition }}
+                        />
+                        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(4,11,18,0.08),rgba(4,11,18,0.26))]" />
+                        <SafeImage
+                          src={previewImageUrl}
+                          alt={entry.title}
+                          className={`relative z-10 h-full w-full object-contain transition-transform duration-700 hover:scale-[1.02] ${theme.imageFilter}`}
+                          style={{ objectPosition: previewObjectPosition }}
+                        />
+                      </>
+                    ) : (
+                      <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-[radial-gradient(circle_at_top,rgba(126,231,255,0.16),transparent_42%),linear-gradient(180deg,#0A141F,#09101A)] text-[#EAF3FF]">
+                        <Images size={30} className="opacity-80" />
+                        <span className="text-xs uppercase tracking-[0.34em] text-[#8AA6C3]">Light Cone Pending</span>
+                      </div>
+                    )}
+                    <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/72 to-transparent" />
+                    <div className="absolute bottom-3 left-3 flex flex-wrap gap-2">
+                      <span className="rounded-full border border-white/12 bg-black/28 px-2.5 py-1 text-[10px] tracking-[0.18em] text-[#F0F6FF] backdrop-blur-md">
+                        {hasImages ? `${entry.images.length} 张光锥` : '等待补帧'}
+                      </span>
+                    </div>
+                  </button>
+
+                  <div className="flex min-w-0 flex-col gap-3">
+                    <div className="flex flex-wrap gap-2">
+                      <span className="rounded-full border border-[#35516C]/65 bg-[#112234]/78 px-3 py-1 text-[10px] uppercase tracking-[0.34em] text-[#8AE7FF]">
+                        Frozen Node
+                      </span>
+                      <span className="rounded-full border border-[#35516C]/65 bg-[#112234]/78 px-3 py-1 text-[10px] uppercase tracking-[0.34em] text-[#FFD38D]">
+                        {hasImages ? 'Photo Memory' : 'Text Memory'}
+                      </span>
+                    </div>
+
+                    {eventSummary && (
+                      <div className="min-w-0">
+                        <p className="text-[10px] uppercase tracking-[0.3em] text-[#738EAA]">Event Ripple</p>
+                        <p className="mt-1.5 text-[14px] leading-6 text-[#B7C8DC] line-clamp-4">
+                          {eventSummary}
+                        </p>
+                      </div>
+                    )}
+
+                    {previewImages.length > 1 && (
+                      <div className="hide-scrollbar flex gap-2 overflow-x-auto pb-1">
+                        {previewImages.map((img, previewIndex) => (
+                          <button
+                            key={img.id}
+                            type="button"
+                            onClick={() => setActiveImageIndex(previewIndex)}
+                            className={`relative shrink-0 overflow-hidden rounded-[16px] border transition-all duration-300 ${
+                              previewIndex === activeImageIndex
+                                ? 'border-[#8AE7FF] bg-[#15283B] shadow-[0_0_0_1px_rgba(138,231,255,0.24)]'
+                                : 'border-[#314D68]/70 bg-[#0F1B29] hover:border-[#6E89A4]'
+                            }`}
+                          >
+                            <SafeImage src={img.imageUrl} className={`h-14 w-14 object-cover ${theme.imageFilter}`} />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {frameSummary && (
+                      <div className="min-w-0 border-t border-[#2D445A]/85 pt-3">
+                        <p className="text-[10px] uppercase tracking-[0.3em] text-[#738EAA]">Recovered Feeling</p>
+                        <p className="mt-1.5 text-[13px] leading-5 text-[#E6D4B1] line-clamp-3">
+                          {frameSummary}
+                        </p>
+                      </div>
+                    )}
+
+                    {!eventSummary && !frameSummary && (
+                      <p className="text-sm leading-6 text-[#748CA5]">
+                        这枚冻结节点还没有留下文字注解。
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -2279,6 +2570,7 @@ function AlbumMasonry({
   onDeleteEntry: (entryId: string) => void;
 }) {
   const theme = useTheme();
+  const lightconeMode = isLightconeTheme(theme);
   const cols = useMasonryCols();
   const expandedEntry = React.useMemo(
     () =>
@@ -2325,7 +2617,7 @@ function AlbumMasonry({
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: -20 }}
         transition={{ duration: 0.4 }}
-        className="w-full"
+        className={`w-full ${lightconeMode ? 'lightcone-album-flow' : ''}`}
       >
         <div className="flex items-center justify-between mb-4 px-1">
           <button
@@ -2367,7 +2659,7 @@ function AlbumMasonry({
     <motion.div 
       key="album" 
       initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} transition={{ duration: 0.4 }}
-      className="flex gap-4 md:gap-6 items-start"
+      className={`flex gap-4 md:gap-6 items-start ${lightconeMode ? 'lightcone-album-flow' : ''}`}
     >
       {columns.map((col, colIndex) => (
         <div key={colIndex} className="flex-1 flex flex-col gap-6 md:gap-8">
@@ -2406,6 +2698,7 @@ const LoosePhotoPolaroid: React.FC<{
   hideActions?: boolean;
 }> = ({ entry, onImageClick, onEditEntry, onDeleteEntry, hideActions = false }) => {
   const theme = useTheme();
+  const lightconeMode = isLightconeTheme(theme);
   const img = entry.images[0];
   
   if (!img) return null;
@@ -2424,7 +2717,7 @@ const LoosePhotoPolaroid: React.FC<{
               e.stopPropagation();
               onEditEntry(entry);
             }}
-            className={`${theme.cardBg} border ${theme.cardBorder} p-1 rounded-full ${theme.accent} hover:opacity-80 transition-colors`}
+            className={`${theme.cardBg} border ${theme.cardBorder} p-1 rounded-full ${theme.accent} hover:opacity-80 transition-colors ${lightconeMode ? 'bg-[#102033]/88' : ''}`}
           >
             <Pencil size={12} />
           </button>
@@ -2434,14 +2727,14 @@ const LoosePhotoPolaroid: React.FC<{
               e.stopPropagation();
               onDeleteEntry(entry.id);
             }}
-            className={`${theme.cardBg} border ${theme.cardBorder} p-1 rounded-full ${theme.accent} hover:opacity-80 transition-colors`}
+            className={`${theme.cardBg} border ${theme.cardBorder} p-1 rounded-full ${theme.accent} hover:opacity-80 transition-colors ${lightconeMode ? 'bg-[#102033]/88' : ''}`}
           >
             <Trash2 size={12} />
           </button>
         </div>
       )}
       <div 
-        className={`relative z-20 shadow-sm rounded-sm overflow-hidden transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-md cursor-zoom-in border ${theme.cardBorder}`}
+        className={`relative z-20 overflow-hidden transition-all duration-300 group-hover:-translate-y-1 cursor-zoom-in border ${theme.cardBorder} ${lightconeMode ? 'lightcone-loose-photo rounded-[26px] shadow-[0_18px_42px_rgba(2,10,22,0.34)]' : 'shadow-sm rounded-sm group-hover:shadow-md'}`}
         onClick={() => onImageClick(img.imageUrl, img.text)}
       >
         <SafeImage src={img.imageUrl} className={`w-full h-auto object-cover transition-transform duration-700 group-hover:scale-105 ${theme.imageFilter}`} />
@@ -2449,7 +2742,7 @@ const LoosePhotoPolaroid: React.FC<{
       
       {img.text && (
         <div className="pt-3 text-center">
-          <p className={`${theme.textMuted} text-sm font-serif font-medium px-2 leading-relaxed text-center`}>
+          <p className={`${theme.textMuted} text-sm font-serif font-medium px-2 leading-relaxed text-center ${lightconeMode ? 'text-[#C6D6E8]' : ''}`}>
             {img.text}
           </p>
         </div>
@@ -2467,6 +2760,7 @@ const AlbumStack: React.FC<{
   onDeleteEntry: (entryId: string) => void;
 }> = ({ entry, onImageClick, isExpanded, onToggle, onEditEntry, onDeleteEntry }) => {
   const theme = useTheme();
+  const lightconeMode = isLightconeTheme(theme);
 
   return (
     <motion.div layout="position" className="relative flex flex-col w-full mb-6">
@@ -2489,7 +2783,7 @@ const AlbumStack: React.FC<{
                   e.stopPropagation();
                   onEditEntry(entry);
                 }}
-                className={`${theme.cardBg} border ${theme.cardBorder} p-1.5 rounded-full ${theme.accent} hover:opacity-80 transition-colors`}
+                className={`${theme.cardBg} border ${theme.cardBorder} p-1.5 rounded-full ${theme.accent} hover:opacity-80 transition-colors ${lightconeMode ? 'bg-[#102033]/88' : ''}`}
               >
                 <Pencil size={12} />
               </button>
@@ -2499,7 +2793,7 @@ const AlbumStack: React.FC<{
                   e.stopPropagation();
                   onDeleteEntry(entry.id);
                 }}
-                className={`${theme.cardBg} border ${theme.cardBorder} p-1.5 rounded-full ${theme.accent} hover:opacity-80 transition-colors`}
+                className={`${theme.cardBg} border ${theme.cardBorder} p-1.5 rounded-full ${theme.accent} hover:opacity-80 transition-colors ${lightconeMode ? 'bg-[#102033]/88' : ''}`}
               >
                 <Trash2 size={12} />
               </button>
@@ -2508,22 +2802,22 @@ const AlbumStack: React.FC<{
             {entry.images.slice(1, 4).map((img, i) => (
               <div 
                 key={img.id}
-                className="absolute inset-0 shadow-sm rounded-sm overflow-hidden border border-stone-200/40 transition-transform duration-300"
+                className={`absolute inset-0 overflow-hidden transition-transform duration-300 ${lightconeMode ? 'lightcone-stack-layer rounded-[22px] border border-[#29445D]/60 shadow-[0_12px_26px_rgba(2,10,22,0.18)]' : 'shadow-sm rounded-sm border border-stone-200/40'}`}
                 style={{ 
                   transform: `rotate(${i % 2 === 0 ? 3 + i : -3 - i}deg) translate(${2 + i * 2}px, ${2 + i * 2}px)`,
                   zIndex: 10 - i
                 }}
               >
-                <SafeImage src={img.imageUrl} className="w-full h-full object-cover opacity-70 grayscale-[30%]" />
+                <SafeImage src={img.imageUrl} className={`w-full h-full object-cover opacity-70 ${lightconeMode ? 'brightness-[0.65] saturate-[0.9]' : 'grayscale-[30%]'}`} />
               </div>
             ))}
             
             {/* Top Photo */}
-            <div className={`relative z-20 shadow-md rounded-sm overflow-hidden group-hover:-translate-y-1 transition-transform duration-300 border ${theme.cardBorder}`}>
+            <div className={`relative z-20 overflow-hidden group-hover:-translate-y-1 transition-transform duration-300 border ${theme.cardBorder} ${lightconeMode ? 'lightcone-stack-card rounded-[26px] shadow-[0_18px_42px_rgba(2,10,22,0.32)]' : 'shadow-md rounded-sm'}`}>
               <SafeImage src={entry.images[0].imageUrl} className={`w-full h-auto object-cover ${theme.imageFilter}`} />
               
               {/* Overlay Info */}
-              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent flex flex-col justify-end p-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+              <div className={`absolute inset-0 flex flex-col justify-end p-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300 ${lightconeMode ? 'bg-gradient-to-t from-[#040A11]/88 via-[#081523]/20 to-transparent' : 'bg-gradient-to-t from-black/60 via-black/10 to-transparent'}`}>
                 <h3 className={`text-white ${theme.fontTitle} font-bold text-lg tracking-wider drop-shadow-md`}>{entry.title}</h3>
                 <p className="text-white/90 text-xs font-medium mt-1 flex items-center gap-1 drop-shadow-md">
                   <Camera size={12} /> {entry.images.length} 张照片
@@ -2538,10 +2832,10 @@ const AlbumStack: React.FC<{
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ duration: 0.3 }}
-            className={`relative flex flex-col gap-6 p-4 rounded-xl ${theme.cardBg} border ${theme.cardBorder} overflow-hidden`}
+            className={`relative flex flex-col gap-6 p-4 ${lightconeMode ? 'lightcone-expanded-stack rounded-[28px]' : 'rounded-xl'} ${theme.cardBg} border ${theme.cardBorder} overflow-hidden`}
           >
             {/* Connecting Line */}
-            <div className={`absolute left-8 top-16 bottom-10 w-px border-l-2 border-dashed ${theme.cardBorder} z-0`}></div>
+            <div className={`absolute left-8 top-16 bottom-10 w-px ${lightconeMode ? 'border-l border-solid border-[#314D68]/80' : `border-l-2 border-dashed ${theme.cardBorder}`} z-0`}></div>
 
             {/* Header */}
             <div className="relative z-10 flex justify-between items-start">
@@ -2552,24 +2846,24 @@ const AlbumStack: React.FC<{
               <div className="flex items-center gap-1">
                 <button
                   type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onEditEntry(entry);
-                  }}
-                  className={`${theme.accent} hover:opacity-80 transition-colors ${theme.cardBg} backdrop-blur-sm p-1.5 rounded-full shadow-sm border ${theme.cardBorder}`}
-                >
-                  <Pencil size={14} />
-                </button>
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEditEntry(entry);
+                    }}
+                    className={`${theme.accent} hover:opacity-80 transition-colors ${theme.cardBg} backdrop-blur-sm p-1.5 rounded-full shadow-sm border ${theme.cardBorder} ${lightconeMode ? 'bg-[#102033]/88' : ''}`}
+                  >
+                    <Pencil size={14} />
+                  </button>
                 <button
                   type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDeleteEntry(entry.id);
-                  }}
-                  className={`${theme.accent} hover:opacity-80 transition-colors ${theme.cardBg} backdrop-blur-sm p-1.5 rounded-full shadow-sm border ${theme.cardBorder}`}
-                >
-                  <Trash2 size={14} />
-                </button>
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDeleteEntry(entry.id);
+                    }}
+                    className={`${theme.accent} hover:opacity-80 transition-colors ${theme.cardBg} backdrop-blur-sm p-1.5 rounded-full shadow-sm border ${theme.cardBorder} ${lightconeMode ? 'bg-[#102033]/88' : ''}`}
+                  >
+                    <Trash2 size={14} />
+                  </button>
                 <button 
                   type="button"
                   onClick={(e) => { e.stopPropagation(); onToggle(); }}
@@ -2592,13 +2886,13 @@ const AlbumStack: React.FC<{
                   style={{ transform: `rotate(${idx % 2 === 0 ? -1 : 1}deg)` }}
                 >
                   <div 
-                    className={`overflow-hidden rounded-sm shadow-sm cursor-zoom-in border ${theme.cardBorder} ${theme.cardBg}`}
+                    className={`overflow-hidden cursor-zoom-in border ${theme.cardBorder} ${theme.cardBg} ${lightconeMode ? 'lightcone-photo-frame rounded-[24px] shadow-[0_18px_40px_rgba(2,10,22,0.26)]' : 'rounded-sm shadow-sm'}`}
                     onClick={() => onImageClick(img.imageUrl, img.text)}
                   >
                     <SafeImage src={img.imageUrl} className={`w-full h-auto object-cover group-hover:scale-[1.02] transition-transform duration-500 ${theme.imageFilter}`} />
                   </div>
                   {img.text && (
-                    <p className={`${theme.textMuted} text-sm mt-3 font-serif font-medium px-2 leading-relaxed text-center`}>
+                    <p className={`${theme.textMuted} text-sm mt-3 font-serif font-medium px-2 leading-relaxed text-center ${lightconeMode ? 'text-[#C6D6E8]' : ''}`}>
                       {img.text}
                     </p>
                   )}
@@ -2624,6 +2918,7 @@ function AddEntryModal({
   onUploadImage: (file: File) => Promise<string>;
 }) {
   const theme = useTheme();
+  const lightconeMode = isLightconeTheme(theme);
   const notify = useNotice();
   const [type, setType] = useState<'timeline' | 'album' | 'treehole'>('timeline');
   const [eventId, setEventId] = useState<'new' | string>('new');
@@ -2694,7 +2989,7 @@ function AddEntryModal({
         </h2>
 
         {/* Type Selector */}
-        <div className="flex gap-2 p-1.5 bg-black/5 rounded-2xl mb-8">
+        <div className={`flex gap-2 p-1.5 rounded-2xl mb-8 ${lightconeMode ? 'bg-[#102033]/72 border border-[#35516C]/50' : 'bg-black/5'}`}>
           {(['timeline', 'album', 'treehole'] as const).map(t => (
             <button
               key={t}
@@ -2840,8 +3135,8 @@ function AddEntryModal({
             <>
               {/* Local Image Upload Field */}
               <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="mt-4">
-                <label className="block text-sm font-bold text-stone-500 mb-2 tracking-widest">上传照片 (可选，单次最多 10 张；单个事件/相册最多 30 张)</label>
-                <label className="relative flex flex-col items-center justify-center w-full h-36 border-2 border-dashed border-pink-200 rounded-xl bg-pink-50/50 hover:bg-pink-50 transition-colors cursor-pointer overflow-hidden group">
+                <label className={`block text-sm font-bold mb-2 tracking-widest ${lightconeMode ? 'text-[#8FA9C4]' : 'text-stone-500'}`}>上传照片 (可选，单次最多 10 张；单个事件/相册最多 30 张)</label>
+                <label className={`relative flex flex-col items-center justify-center w-full h-36 border-2 border-dashed rounded-xl transition-colors cursor-pointer overflow-hidden group ${lightconeMode ? 'border-[#35516C]/72 bg-[#102033]/72 hover:bg-[#13263A]' : 'border-pink-200 bg-pink-50/50 hover:bg-pink-50'}`}>
                   {imageUrls.length > 0 ? (
                     <div className="relative w-full h-full p-2">
                       <div className="grid h-full grid-cols-5 gap-1">
@@ -2857,7 +3152,7 @@ function AddEntryModal({
                       </span>
                     </div>
                   ) : (
-                    <div className="flex flex-col items-center text-pink-400">
+                    <div className={`flex flex-col items-center ${lightconeMode ? 'text-[#8AE7FF]' : 'text-pink-400'}`}>
                       <ImagePlus size={28} className="mb-2 opacity-80" />
                       <span className="text-sm font-bold">点击选择本地图片（可多选）</span>
                     </div>
@@ -2869,12 +3164,12 @@ function AddEntryModal({
               {/* Image Text/Remark Field */}
               {imageUrls.length > 0 && (
                 <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="mt-4">
-                  <label className="block text-sm font-bold text-stone-500 mb-2 tracking-widest">照片备注 (可选，批量上传会应用到全部照片)</label>
+                  <label className={`block text-sm font-bold mb-2 tracking-widest ${lightconeMode ? 'text-[#8FA9C4]' : 'text-stone-500'}`}>照片备注 (可选，批量上传会应用到全部照片)</label>
                   <textarea
                     value={text} onChange={(e) => setText(e.target.value)}
                     placeholder="写一句简短的描述..."
                     rows={2}
-                    className="w-full p-4 bg-[#fffcfc] border border-pink-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-300/50 focus:border-pink-300 transition-all font-sans text-stone-700 font-medium resize-none"
+                    className={`w-full p-4 rounded-xl transition-all font-sans font-medium resize-none ${lightconeMode ? 'bg-[#102033]/72 border border-[#35516C]/72 text-[#EAF3FF] focus:outline-none focus:ring-2 focus:ring-sky-300/25 focus:border-sky-300/50' : 'bg-[#fffcfc] border border-pink-100 text-stone-700 focus:outline-none focus:ring-2 focus:ring-pink-300/50 focus:border-pink-300'}`}
                   />
                 </motion.div>
               )}
@@ -2885,22 +3180,22 @@ function AddEntryModal({
           {type === 'treehole' && (
             <>
               <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
-                <label className="block text-sm font-bold text-stone-500 mb-2 tracking-widest">日期</label>
+                <label className={`block text-sm font-bold mb-2 tracking-widest ${lightconeMode ? 'text-[#8FA9C4]' : 'text-stone-500'}`}>日期</label>
                 <div className="relative">
-                  <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 text-pink-400" size={18} />
+                  <Calendar className={`absolute left-4 top-1/2 -translate-y-1/2 ${lightconeMode ? 'text-[#8AE7FF]' : 'text-pink-400'}`} size={18} />
                   <input
                     type="date" required value={date} onChange={(e) => setDate(e.target.value)}
-                    className="w-full pl-12 pr-4 py-3 bg-[#fffcfc] border border-pink-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-300/50 focus:border-pink-300 transition-all font-sans text-stone-700 font-bold"
+                    className={`w-full pl-12 pr-4 py-3 rounded-xl transition-all font-sans font-bold ${lightconeMode ? 'bg-[#102033]/72 border border-[#35516C]/72 text-[#EAF3FF] focus:outline-none focus:ring-2 focus:ring-sky-300/25 focus:border-sky-300/50' : 'bg-[#fffcfc] border border-pink-100 text-stone-700 focus:outline-none focus:ring-2 focus:ring-pink-300/50 focus:border-pink-300'}`}
                   />
                 </div>
               </motion.div>
               <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
-                <label className="block text-sm font-bold text-stone-500 mb-2 tracking-widest">树洞留言</label>
+                <label className={`block text-sm font-bold mb-2 tracking-widest ${lightconeMode ? 'text-[#8FA9C4]' : 'text-stone-500'}`}>树洞留言</label>
                 <textarea
                   required value={text} onChange={(e) => setText(e.target.value)}
                   placeholder="写下你想记录的瞬间..."
                   rows={4}
-                  className="w-full p-4 bg-[#fffcfc] border border-pink-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-300/50 focus:border-pink-300 transition-all font-sans text-stone-700 font-medium resize-none"
+                  className={`w-full p-4 rounded-xl transition-all font-sans font-medium resize-none ${lightconeMode ? 'bg-[#102033]/72 border border-[#35516C]/72 text-[#EAF3FF] focus:outline-none focus:ring-2 focus:ring-sky-300/25 focus:border-sky-300/50' : 'bg-[#fffcfc] border border-pink-100 text-stone-700 focus:outline-none focus:ring-2 focus:ring-pink-300/50 focus:border-pink-300'}`}
                 />
               </motion.div>
             </>
@@ -2909,7 +3204,7 @@ function AddEntryModal({
           <button
             type="submit"
             disabled={isUploadingImage}
-            className="w-full py-4 bg-pink-400 text-white rounded-xl hover:bg-pink-500 transition-colors duration-300 font-bold tracking-widest mt-4 shadow-[0_8px_20px_rgba(244,114,182,0.3)] text-lg disabled:opacity-50 disabled:cursor-not-allowed"
+            className={`w-full py-4 rounded-xl transition-colors duration-300 font-bold tracking-widest mt-4 text-lg disabled:opacity-50 disabled:cursor-not-allowed ${lightconeMode ? 'bg-[linear-gradient(135deg,#81E4FF_0%,#A9C6FF_50%,#FFD38D_100%)] text-[#06111B] shadow-[0_12px_28px_rgba(129,228,255,0.18)] hover:opacity-95' : 'bg-pink-400 text-white hover:bg-pink-500 shadow-[0_8px_20px_rgba(244,114,182,0.3)]'}`}
           >
             {type === 'timeline' ? '保存至档案' : type === 'album' ? '保存至相册' : '投入树洞'}
           </button>
@@ -3748,6 +4043,7 @@ function Portal({
   onUploadImage: (file: File) => Promise<string>;
 }) {
   const theme = useTheme();
+  const lightconeMode = isLightconeTheme(theme);
   const notify = useNotice();
   const [isCreating, setIsCreating] = useState(false);
   const [newName, setNewName] = useState('');
@@ -3856,10 +4152,10 @@ function Portal({
   };
 
   return (
-    <div className="min-h-screen bg-[#F4F1EA] relative overflow-hidden flex flex-col items-center justify-center py-20 selection:bg-stone-200">
+    <div className={`min-h-screen relative overflow-hidden flex flex-col items-center justify-center py-20 ${lightconeMode ? 'theme-lightcone lightcone-portal-shell selection:bg-sky-200/20 selection:text-white' : 'bg-[#F4F1EA] selection:bg-stone-200'}`}>
       {/* Massive Background Typography */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-[18vw] font-serif text-stone-200/40 whitespace-nowrap pointer-events-none tracking-tighter font-bold select-none">
-        ARCHIVE
+      <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-[18vw] whitespace-nowrap pointer-events-none tracking-tighter font-bold select-none ${lightconeMode ? 'font-lightcone-title text-[#183048]/44' : 'font-serif text-stone-200/40'}`}>
+        {lightconeMode ? 'LIGHTCONE' : 'ARCHIVE'}
       </div>
 
       <div className="relative z-10 w-full max-w-7xl mx-auto px-8">
@@ -3870,8 +4166,8 @@ function Portal({
         >
           <div className="group relative inline-flex flex-col items-center">
             <span aria-hidden="true" className="absolute left-full top-0 h-full w-12" />
-            <h1 className="text-3xl md:text-4xl font-serif text-stone-800 tracking-[0.2em]">{portalTitle}</h1>
-            <div className="mt-6 w-12 h-[1px] bg-stone-400"></div>
+            <h1 className={`${lightconeMode ? 'font-lightcone-title text-[#F1F7FF] tracking-[0.26em] lightcone-title-glow' : 'font-serif text-stone-800 tracking-[0.2em]'} text-3xl md:text-4xl`}>{portalTitle}</h1>
+            <div className={`mt-6 w-12 h-[1px] ${lightconeMode ? 'bg-[linear-gradient(90deg,rgba(126,231,255,0),rgba(126,231,255,0.9),rgba(255,211,141,0.88),rgba(255,211,141,0))]' : 'bg-stone-400'}`}></div>
             <button
               type="button"
               onClick={() => {
@@ -3879,7 +4175,7 @@ function Portal({
                 setIsEditingPortalTitle(true);
               }}
               aria-label="修改空间页标题"
-              className={`absolute left-full ml-2 top-1/2 -translate-y-1/2 w-8 h-8 md:w-9 md:h-9 flex items-center justify-center rounded-full ${theme.cardBg} border ${theme.cardBorder} ${theme.accent} shadow-sm invisible opacity-0 pointer-events-none group-hover:visible group-hover:opacity-100 group-hover:pointer-events-auto focus-visible:visible focus-visible:opacity-100 focus-visible:pointer-events-auto hover:opacity-80 transition-all duration-200`}
+                className={`absolute left-full ml-2 top-1/2 -translate-y-1/2 w-8 h-8 md:w-9 md:h-9 flex items-center justify-center rounded-full ${theme.cardBg} border ${theme.cardBorder} ${theme.accent} shadow-sm invisible opacity-0 pointer-events-none group-hover:visible group-hover:opacity-100 group-hover:pointer-events-auto focus-visible:visible focus-visible:opacity-100 focus-visible:pointer-events-auto hover:opacity-80 transition-all duration-200`}
             >
               <Pencil size={14} />
             </button>
@@ -3915,7 +4211,7 @@ function Portal({
                       setRenameTarget(space);
                       setRenameDraft(space.name);
                     }}
-                    className={`w-7 h-7 flex items-center justify-center rounded-full bg-white/85 ${theme.accent} hover:opacity-80 shadow-sm transition-colors`}
+                    className={`w-7 h-7 flex items-center justify-center rounded-full ${lightconeMode ? 'bg-[#102033]/88 border border-[#35516C]/72' : 'bg-white/85'} ${theme.accent} hover:opacity-80 shadow-sm transition-colors`}
                   >
                     <Pencil size={13} />
                   </button>
@@ -3925,37 +4221,37 @@ function Portal({
                       e.stopPropagation();
                       setDeleteTarget(space);
                     }}
-                    className={`w-7 h-7 flex items-center justify-center rounded-full bg-white/85 ${theme.accent} hover:opacity-80 shadow-sm transition-colors`}
+                    className={`w-7 h-7 flex items-center justify-center rounded-full ${lightconeMode ? 'bg-[#102033]/88 border border-[#35516C]/72' : 'bg-white/85'} ${theme.accent} hover:opacity-80 shadow-sm transition-colors`}
                   >
                     <Trash2 size={13} />
                   </button>
                 </div>
                 {/* Book Back Cover & Pages Edge */}
-                <div className="absolute inset-0 bg-[#EFECE4] shadow-md border border-stone-300/60 rounded-r-md rounded-l-sm transition-all duration-700 z-0 flex justify-end overflow-hidden">
+                <div className={`absolute inset-0 transition-all duration-700 z-0 flex justify-end overflow-hidden ${lightconeMode ? 'lightcone-space-card rounded-[2rem] border border-[#2D4963]/72 bg-[linear-gradient(180deg,rgba(12,24,38,0.62),rgba(7,15,24,0.88))] shadow-[0_22px_48px_rgba(2,10,22,0.34)]' : 'bg-[#EFECE4] shadow-md border border-stone-300/60 rounded-r-md rounded-l-sm'}`}>
                   {/* Simulated pages edge */}
-                  <div className="w-3 h-full bg-[repeating-linear-gradient(to_bottom,#d6d3c9_0px,#d6d3c9_1px,transparent_1px,transparent_3px)] opacity-60 border-l border-stone-300/30"></div>
+                  <div className={`w-3 h-full ${lightconeMode ? 'bg-[linear-gradient(180deg,rgba(129,228,255,0.4),rgba(169,198,255,0.1),rgba(255,211,141,0.34))] opacity-80 border-l border-white/8' : 'bg-[repeating-linear-gradient(to_bottom,#d6d3c9_0px,#d6d3c9_1px,transparent_1px,transparent_3px)] opacity-60 border-l border-stone-300/30'}`}></div>
                 </div>
 
                 {/* Layer 3: Artbook Cover (Top) */}
-                <div className="relative z-10 w-[288px] h-[416px] bg-[#EAE7DF] p-5 shadow-[5px_5px_15px_rgba(0,0,0,0.1)] border border-stone-300/60 transition-transform duration-700 ease-[cubic-bezier(0.25,1,0.5,1)] origin-left group-hover:-rotate-y-[15deg] group-hover:shadow-[20px_10px_30px_rgba(0,0,0,0.2)] flex flex-col rounded-r-sm rounded-l-sm">
+                <div className={`relative z-10 w-[288px] h-[416px] p-5 transition-transform duration-700 ease-[cubic-bezier(0.25,1,0.5,1)] origin-left group-hover:-rotate-y-[15deg] flex flex-col ${lightconeMode ? 'lightcone-space-card rounded-[2rem] border border-[#35516C]/72 bg-[#0D1B2A]/72 backdrop-blur-xl shadow-[0_26px_52px_rgba(2,10,22,0.4)] group-hover:shadow-[0_30px_60px_rgba(2,10,22,0.5)]' : 'bg-[#EAE7DF] shadow-[5px_5px_15px_rgba(0,0,0,0.1)] border border-stone-300/60 rounded-r-sm rounded-l-sm group-hover:shadow-[20px_10px_30px_rgba(0,0,0,0.2)]'}`}>
                   
                   {/* Book spine shadow effect on the left */}
-                  <div className="absolute left-0 top-0 bottom-0 w-6 bg-gradient-to-r from-black/[0.06] to-transparent"></div>
-                  <div className="absolute left-6 top-0 bottom-0 w-[1px] bg-stone-300/40"></div>
+                  <div className={`absolute left-0 top-0 bottom-0 w-6 ${lightconeMode ? 'bg-gradient-to-r from-white/[0.05] to-transparent' : 'bg-gradient-to-r from-black/[0.06] to-transparent'}`}></div>
+                  <div className={`absolute left-6 top-0 bottom-0 w-[1px] ${lightconeMode ? 'bg-[#375470]/60' : 'bg-stone-300/40'}`}></div>
                   
                   {/* Inner shadow for the opening effect */}
-                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-transparent to-black/[0.03] opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none"></div>
+                  <div className={`absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none ${lightconeMode ? 'bg-gradient-to-r from-transparent via-transparent to-[#8AE7FF]/[0.05]' : 'bg-gradient-to-r from-transparent via-transparent to-black/[0.03]'}`}></div>
 
                   {/* Content Wrapper (shifted right to account for spine) */}
                   <div className="flex flex-col h-full pl-4">
                     {/* Top Label */}
                     <div className="flex justify-between items-center mb-4 mt-1">
-                      <span className="font-mono text-[10px] text-stone-500 tracking-widest uppercase">Vol. {String(index + 1).padStart(2, '0')}</span>
-                      <div className="w-1.5 h-1.5 rounded-full bg-stone-400/60"></div>
+                      <span className={`${lightconeMode ? 'text-[#8EABC6]' : 'text-stone-500'} font-mono text-[10px] tracking-widest uppercase`}>Vol. {String(index + 1).padStart(2, '0')}</span>
+                      <div className={`w-1.5 h-1.5 rounded-full ${lightconeMode ? 'bg-[#8AE7FF]/70 shadow-[0_0_10px_rgba(138,231,255,0.65)]' : 'bg-stone-400/60'}`}></div>
                     </div>
 
                     {/* Tipped-in Photo */}
-                    <div className="relative w-full flex-1 bg-stone-200 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.05)] overflow-hidden">
+                    <div className={`relative w-full flex-1 overflow-hidden ${lightconeMode ? 'rounded-[1.35rem] border border-[#2B4761]/75 bg-[#07111A] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]' : 'bg-stone-200 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.05)]'}`}>
                       <img
                         src={space.avatarImage}
                         alt={space.name}
@@ -3970,10 +4266,10 @@ function Portal({
                     
                     {/* Title Area */}
                     <div className="mt-5 mb-1 flex flex-col">
-                      <h2 className="font-serif text-2xl text-stone-800 tracking-widest leading-none uppercase truncate">{space.name}</h2>
+                      <h2 className={`${lightconeMode ? 'font-lightcone-title text-[#EEF5FF] tracking-[0.18em]' : 'font-serif text-stone-800 tracking-widest uppercase'} text-2xl leading-none truncate`}>{space.name}</h2>
                       <div className="flex items-center justify-between mt-3">
-                        <span className="text-[10px] font-mono text-stone-500 tracking-[0.2em] uppercase">Archive</span>
-                        <span className="text-stone-400 opacity-0 group-hover:opacity-100 transition-all duration-300 transform -translate-x-2 group-hover:translate-x-0">
+                        <span className={`text-[10px] font-mono tracking-[0.2em] uppercase ${lightconeMode ? 'text-[#8FA9C4]' : 'text-stone-500'}`}>{lightconeMode ? 'Frozen Node' : 'Archive'}</span>
+                        <span className={`${lightconeMode ? 'text-[#DDEBFF]' : 'text-stone-400'} opacity-0 group-hover:opacity-100 transition-all duration-300 transform -translate-x-2 group-hover:translate-x-0`}>
                           &rarr;
                         </span>
                       </div>
@@ -3995,16 +4291,16 @@ function Portal({
             whileHover={isSpaceLimitReached ? undefined : { scale: 1.02, rotate: 0, zIndex: 50 }}
           >
             {/* Background dashed layer for thickness */}
-            <div className="absolute inset-0 border border-stone-300/60 border-dashed rounded-sm transition-all duration-500 group-hover:rotate-[4deg] group-hover:translate-x-4 group-hover:translate-y-2 z-0 origin-bottom-left"></div>
+            <div className={`absolute inset-0 transition-all duration-500 group-hover:rotate-[4deg] group-hover:translate-x-4 group-hover:translate-y-2 z-0 origin-bottom-left ${lightconeMode ? 'rounded-[2rem] border border-[#29445D]/65 bg-[linear-gradient(180deg,rgba(12,24,38,0.18),rgba(7,15,24,0.3))]' : 'border border-stone-300/60 border-dashed rounded-sm'}`}></div>
             
             {/* Main dashed layer */}
-            <div className="relative z-10 w-[288px] h-[416px] border border-stone-300 border-dashed flex flex-col items-center justify-center transition-all duration-500 group-hover:border-stone-400 bg-[#F4F1EA] group-hover:-translate-y-2 group-hover:shadow-[0_20px_40px_-10px_rgba(0,0,0,0.05)]">
-              <div className="w-12 h-12 rounded-full border border-stone-300 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300 group-hover:border-stone-400">
-                <Plus className="text-stone-400 group-hover:text-stone-600 transition-colors" size={24} />
+            <div className={`relative z-10 w-[288px] h-[416px] flex flex-col items-center justify-center transition-all duration-500 group-hover:-translate-y-2 ${lightconeMode ? 'lightcone-space-card rounded-[2rem] border border-[#35516C]/72 bg-[#0D1B2A]/68 backdrop-blur-xl group-hover:shadow-[0_24px_56px_rgba(2,10,22,0.44)]' : 'border border-stone-300 border-dashed bg-[#F4F1EA] group-hover:border-stone-400 group-hover:shadow-[0_20px_40px_-10px_rgba(0,0,0,0.05)]'}`}>
+              <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300 ${lightconeMode ? 'border border-[#35516C]/72 bg-[#102033]/80' : 'border border-stone-300 group-hover:border-stone-400'}`}>
+                <Plus className={`${lightconeMode ? 'text-[#8AE7FF]' : 'text-stone-400 group-hover:text-stone-600'} transition-colors`} size={24} />
               </div>
-              <span className="text-stone-400 font-serif tracking-widest text-sm group-hover:text-stone-600 transition-colors">NEW CHAPTER</span>
+              <span className={`${lightconeMode ? 'font-lightcone-title text-[#EAF3FF] tracking-[0.22em]' : 'text-stone-400 font-serif tracking-widest group-hover:text-stone-600'} text-sm transition-colors`}>{lightconeMode ? 'NEW LIGHT CONE' : 'NEW CHAPTER'}</span>
               {spaceLimit ? (
-                <span className="mt-3 text-[11px] font-mono tracking-[0.2em] text-stone-400">
+                <span className={`mt-3 text-[11px] font-mono tracking-[0.2em] ${lightconeMode ? 'text-[#8FA9C4]' : 'text-stone-400'}`}>
                   {spaceCount}/{spaceLimit}
                 </span>
               ) : null}
@@ -4026,53 +4322,53 @@ function Portal({
               initial={{ scale: 0.95, opacity: 0, y: 20 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.95, opacity: 0, y: 20 }}
-              className="bg-[#F4F1EA] rounded-none border border-stone-200 p-10 w-full max-w-md shadow-2xl relative"
+              className={`w-full max-w-md p-10 shadow-2xl relative ${lightconeMode ? 'lightcone-space-card rounded-[2rem] border border-[#35516C]/72 bg-[#0D1B2A]/78 backdrop-blur-xl' : 'bg-[#F4F1EA] rounded-none border border-stone-200'}`}
             >
               <button 
                 onClick={() => setIsCreating(false)}
-                className="absolute top-6 right-6 text-stone-400 hover:text-stone-800 transition-colors"
+                className={`absolute top-6 right-6 transition-colors ${lightconeMode ? 'text-[#8FA9C4] hover:text-white' : 'text-stone-400 hover:text-stone-800'}`}
               >
                 <X size={24} strokeWidth={1.5} />
               </button>
               
-              <h2 className="text-2xl font-serif text-stone-800 mb-8 text-center tracking-widest">开启新篇章</h2>
+              <h2 className={`${lightconeMode ? 'font-lightcone-title text-[#F0F6FF] tracking-[0.2em]' : 'font-serif text-stone-800 tracking-widest'} text-2xl mb-8 text-center`}>开启新篇章</h2>
 
               {accountStats ? (
-                <div className="mb-6 rounded-sm border border-stone-200 bg-white/70 px-4 py-3 text-sm text-stone-600">
+                <div className={`mb-6 px-4 py-3 text-sm ${lightconeMode ? 'rounded-[1.4rem] border border-[#35516C]/68 bg-[#102033]/72 text-[#BFD0E3]' : 'rounded-sm border border-stone-200 bg-white/70 text-stone-600'}`}>
                   <div className="flex items-center justify-between gap-3">
                     <span>空间额度</span>
-                    <span className="font-medium text-stone-800">{accountStats.spaceCount}/{accountStats.spaceLimit}</span>
+                    <span className={`font-medium ${lightconeMode ? 'text-[#F0F6FF]' : 'text-stone-800'}`}>{accountStats.spaceCount}/{accountStats.spaceLimit}</span>
                   </div>
                   <div className="mt-2 flex items-center justify-between gap-3">
                     <span>剩余可建空间</span>
-                    <span className="font-medium text-stone-800">{remainingSpaceCount ?? 0}</span>
+                    <span className={`font-medium ${lightconeMode ? 'text-[#F0F6FF]' : 'text-stone-800'}`}>{remainingSpaceCount ?? 0}</span>
                   </div>
                 </div>
               ) : null}
               
               <form onSubmit={handleCreate} className="space-y-8">
                 <div>
-                  <label className="block text-xs font-serif tracking-widest text-stone-500 mb-3 uppercase">Name</label>
+                  <label className={`block text-xs mb-3 uppercase ${lightconeMode ? 'font-lightcone-title tracking-[0.28em] text-[#8FA9C4]' : 'font-serif tracking-widest text-stone-500'}`}>Name</label>
                   <input 
                     type="text" 
                     required
                     value={newName}
                     onChange={(e) => setNewName(e.target.value)}
-                    className="w-full px-0 py-2 bg-transparent border-b border-stone-300 focus:outline-none focus:border-stone-800 transition-colors font-serif text-lg text-stone-800 placeholder:text-stone-300"
+                    className={`w-full px-0 py-2 bg-transparent border-b transition-colors text-lg placeholder:text-stone-300 ${lightconeMode ? 'border-[#35516C] focus:border-[#8AE7FF] font-lightcone-title text-[#F0F6FF]' : 'border-stone-300 focus:border-stone-800 font-serif text-stone-800'} focus:outline-none`}
                     placeholder="角色名称..."
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-serif tracking-widest text-stone-500 mb-3 uppercase">Portrait</label>
+                  <label className={`block text-xs mb-3 uppercase ${lightconeMode ? 'font-lightcone-title tracking-[0.28em] text-[#8FA9C4]' : 'font-serif tracking-widest text-stone-500'}`}>Portrait</label>
                   <div className="flex items-center justify-center w-full">
-                    <label className="flex flex-col items-center justify-center w-full h-48 border border-stone-300 border-dashed cursor-pointer bg-stone-50/50 hover:bg-stone-100/50 transition-colors overflow-hidden relative">
+                    <label className={`flex flex-col items-center justify-center w-full h-48 cursor-pointer transition-colors overflow-hidden relative ${lightconeMode ? 'rounded-[1.5rem] border border-[#35516C]/72 bg-[#102033]/72 hover:bg-[#13263A]' : 'border border-stone-300 border-dashed bg-stone-50/50 hover:bg-stone-100/50'}`}>
                       {newAvatar ? (
                         <img src={newAvatar} alt="Preview" className="w-full h-full object-cover" />
                       ) : (
                         <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                          <Camera className="w-6 h-6 text-stone-400 mb-3" strokeWidth={1.5} />
-                          <p className="text-xs font-serif tracking-widest text-stone-400">UPLOAD PHOTO</p>
+                          <Camera className={`w-6 h-6 mb-3 ${lightconeMode ? 'text-[#8AE7FF]' : 'text-stone-400'}`} strokeWidth={1.5} />
+                          <p className={`text-xs tracking-widest ${lightconeMode ? 'font-lightcone-title text-[#BFD0E3]' : 'font-serif text-stone-400'}`}>UPLOAD PHOTO</p>
                         </div>
                       )}
                       <input type="file" className="hidden" accept="image/*" disabled={isUploadingAvatar} onChange={(e) => void handleImageUpload(e)} required={!newAvatar} />
@@ -4083,7 +4379,7 @@ function Portal({
                 <button 
                   type="submit"
                   disabled={isSubmitting || isUploadingAvatar}
-                  className="w-full py-4 bg-stone-800 text-[#F4F1EA] font-serif text-sm tracking-[0.2em] hover:bg-stone-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className={`w-full py-4 text-sm tracking-[0.2em] transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${lightconeMode ? 'rounded-full bg-[linear-gradient(135deg,#81E4FF_0%,#A9C6FF_50%,#FFD38D_100%)] text-[#06111B] font-lightcone-title hover:opacity-95' : 'bg-stone-800 text-[#F4F1EA] font-serif hover:bg-stone-700'}`}
                 >
                   CREATE
                 </button>
@@ -4139,6 +4435,7 @@ function AuthPanel({
   onRegister: (payload: {email: string; password: string; nickname: string}) => Promise<void>;
   theme: (typeof THEMES)[ThemeName];
 }) {
+  const lightconeMode = isLightconeTheme(theme);
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -4172,15 +4469,22 @@ function AuthPanel({
   }, [mode, onLogin, onRegister, email, password, nickname]);
 
   return (
-    <div className={`min-h-screen flex items-center justify-center px-4 ${theme.globalBg} ${theme.textMain}`}>
+    <div className={`min-h-screen flex items-center justify-center px-4 ${theme.globalBg} ${theme.textMain} ${lightconeMode ? 'theme-lightcone relative isolate overflow-hidden' : ''}`}>
+      {lightconeMode && (
+        <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+          <div className="lightcone-river absolute inset-x-[-24%] top-[-10%] h-[34rem] rounded-[50%] blur-3xl" />
+          <div className="lightcone-dust absolute left-[-10%] bottom-[-8%] h-[24rem] w-[24rem] rounded-full blur-3xl" />
+          <div className="lightcone-grid absolute inset-0 opacity-70" />
+        </div>
+      )}
       <motion.div
         initial={{opacity: 0, y: 14}}
         animate={{opacity: 1, y: 0}}
-        className={`w-full max-w-md ${theme.cardBg} ${theme.cardBorder} ${theme.cardShadow} ${theme.radius} border p-8`}
+        className={`w-full max-w-md ${theme.cardBg} ${theme.cardBorder} ${theme.cardShadow} ${theme.radius} border p-8 ${lightconeMode ? 'lightcone-space-card' : ''}`}
       >
         <div className="mb-6 text-center">
           <p className={`text-xs tracking-[0.2em] uppercase ${theme.textMuted}`}>Digital Journal</p>
-          <h1 className={`mt-3 text-3xl ${theme.fontTitle}`}>{mode === 'login' ? '欢迎回来' : '创建账号'}</h1>
+          <h1 className={`mt-3 text-3xl ${theme.fontTitle} ${lightconeMode ? 'lightcone-title-glow' : ''}`}>{mode === 'login' ? '欢迎回来' : '创建账号'}</h1>
         </div>
 
         <form className="space-y-4" onSubmit={handleSubmit}>
@@ -4192,7 +4496,7 @@ function AuthPanel({
               required
               value={email}
               onChange={(event) => setEmail(event.target.value)}
-              className="w-full border border-stone-300 px-3 py-2 bg-white text-stone-900 focus:outline-none focus:border-stone-700"
+              className={`w-full px-3 py-2 focus:outline-none ${lightconeMode ? 'rounded-2xl border border-[#35516C]/72 bg-[#102033]/72 text-[#EDF4FF] placeholder:text-[#6C86A0] focus:border-[#8AE7FF]' : 'border border-stone-300 bg-white text-stone-900 focus:border-stone-700'}`}
               placeholder="you@example.com"
             />
           </div>
@@ -4207,7 +4511,7 @@ function AuthPanel({
                 maxLength={32}
                 value={nickname}
                 onChange={(event) => setNickname(event.target.value)}
-                className="w-full border border-stone-300 px-3 py-2 bg-white text-stone-900 focus:outline-none focus:border-stone-700"
+                className={`w-full px-3 py-2 focus:outline-none ${lightconeMode ? 'rounded-2xl border border-[#35516C]/72 bg-[#102033]/72 text-[#EDF4FF] placeholder:text-[#6C86A0] focus:border-[#8AE7FF]' : 'border border-stone-300 bg-white text-stone-900 focus:border-stone-700'}`}
                 placeholder="你的昵称"
               />
             </div>
@@ -4222,12 +4526,12 @@ function AuthPanel({
               minLength={8}
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              className="w-full border border-stone-300 px-3 py-2 bg-white text-stone-900 focus:outline-none focus:border-stone-700"
+              className={`w-full px-3 py-2 focus:outline-none ${lightconeMode ? 'rounded-2xl border border-[#35516C]/72 bg-[#102033]/72 text-[#EDF4FF] placeholder:text-[#6C86A0] focus:border-[#8AE7FF]' : 'border border-stone-300 bg-white text-stone-900 focus:border-stone-700'}`}
               placeholder="至少 8 位"
             />
           </div>
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className={`text-sm ${lightconeMode ? 'text-[#FFD38D]' : 'text-red-600'}`}>{error}</p>}
 
           <button
             type="submit"

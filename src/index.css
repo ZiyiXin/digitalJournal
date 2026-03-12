@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Noto+Sans+SC:wght@400;500;700;800&family=Noto+Serif+SC:wght@500;600;700;900&family=Nunito:wght@400;600;700;800;900&display=swap');
 @import "tailwindcss";
 
 @theme {
@@ -8,6 +8,14 @@
 body {
   background-color: #fcfaf9;
   color: #2c2c2c;
+}
+
+.font-lightcone-body {
+  font-family: "Noto Sans SC", "Nunito", ui-sans-serif, system-ui, sans-serif;
+}
+
+.font-lightcone-title {
+  font-family: "Cormorant Garamond", "Noto Serif SC", ui-serif, Georgia, serif;
 }
 
 .timeline-cinema-shell {
@@ -52,6 +60,272 @@ body {
 
 .cinema-orb {
   animation: cinemaOrbPulse 3.6s ease-in-out infinite;
+}
+
+@keyframes lightconeRiverFlow {
+  0% {
+    transform: translate3d(-2%, 0, 0) rotate(-10deg) scale(1);
+    opacity: 0.48;
+  }
+  50% {
+    transform: translate3d(3%, 4%, 0) rotate(-6deg) scale(1.03);
+    opacity: 0.74;
+  }
+  100% {
+    transform: translate3d(-1%, 2%, 0) rotate(-12deg) scale(1.01);
+    opacity: 0.56;
+  }
+}
+
+@keyframes lightconePulse {
+  0%,
+  100% {
+    opacity: 0.42;
+    transform: scale(0.92);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.08);
+  }
+}
+
+@keyframes lightconeFloat {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(1.5rem, -1rem, 0) scale(1.06);
+  }
+}
+
+@keyframes lightconeShimmer {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 100% 50%;
+  }
+}
+
+.theme-lightcone {
+  background:
+    radial-gradient(circle at top, rgba(24, 61, 96, 0.38), transparent 42%),
+    linear-gradient(180deg, #08131f 0%, #06111b 45%, #050d16 100%);
+}
+
+.lightcone-river {
+  background:
+    linear-gradient(110deg, rgba(126, 231, 255, 0.24), rgba(169, 198, 255, 0.14), rgba(255, 211, 141, 0.2)),
+    radial-gradient(circle, rgba(126, 231, 255, 0.18), transparent 68%);
+  animation: lightconeRiverFlow 18s ease-in-out infinite;
+}
+
+.lightcone-dust {
+  background: radial-gradient(circle, rgba(126, 231, 255, 0.18), rgba(169, 198, 255, 0.12) 30%, transparent 72%);
+  animation: lightconeFloat 16s ease-in-out infinite;
+}
+
+.lightcone-grid {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+  background-size: 72px 72px;
+  mask-image: linear-gradient(180deg, transparent, black 15%, black 78%, transparent);
+}
+
+.lightcone-space-card,
+.lightcone-timeline-card,
+.lightcone-loose-photo,
+.lightcone-stack-card,
+.lightcone-expanded-stack,
+.lightcone-shard-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.lightcone-space-card::before,
+.lightcone-timeline-card::before,
+.lightcone-loose-photo::before,
+.lightcone-stack-card::before,
+.lightcone-expanded-stack::before,
+.lightcone-shard-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  pointer-events: none;
+}
+
+.lightcone-space-card::after,
+.lightcone-timeline-card::after,
+.lightcone-loose-photo::after,
+.lightcone-stack-card::after,
+.lightcone-expanded-stack::after,
+.lightcone-shard-card::after {
+  content: "";
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: -18px;
+  height: 42px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(126, 231, 255, 0.14), rgba(255, 211, 141, 0.08), transparent 72%);
+  filter: blur(18px);
+  opacity: 0.56;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.lightcone-portal-shell::before {
+  content: "";
+  position: absolute;
+  inset: 8% 10%;
+  border-radius: 3rem;
+  background:
+    radial-gradient(circle at top, rgba(126, 231, 255, 0.08), transparent 35%),
+    radial-gradient(circle at bottom right, rgba(255, 211, 141, 0.08), transparent 28%);
+  filter: blur(28px);
+  pointer-events: none;
+}
+
+.lightcone-hero-shell::after {
+  content: "";
+  position: absolute;
+  inset: 1rem 6% 0.5rem;
+  border-radius: 2.5rem;
+  border: 1px solid rgba(85, 117, 150, 0.18);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 38%);
+  pointer-events: none;
+}
+
+.lightcone-hero-lens {
+  background: radial-gradient(circle, rgba(126, 231, 255, 0.24), rgba(169, 198, 255, 0.14) 38%, rgba(255, 211, 141, 0.08) 58%, transparent 72%);
+  animation: lightconePulse 8s ease-in-out infinite;
+}
+
+.lightcone-hero-lines {
+  background:
+    linear-gradient(90deg, transparent, rgba(126, 231, 255, 0.08), transparent),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent);
+  mask-image: linear-gradient(180deg, transparent, black 15%, black 80%, transparent);
+}
+
+.lightcone-avatar-shell::after {
+  content: "";
+  position: absolute;
+  inset: -10px;
+  border-radius: 999px;
+  border: 1px solid rgba(126, 231, 255, 0.18);
+  box-shadow: 0 0 40px rgba(126, 231, 255, 0.18);
+  pointer-events: none;
+}
+
+.lightcone-title-glow {
+  text-shadow: 0 0 22px rgba(126, 231, 255, 0.16), 0 0 44px rgba(169, 198, 255, 0.08);
+}
+
+.lightcone-copy-panel {
+  padding: 0.35rem 0.8rem;
+  border-radius: 1.5rem;
+  background: linear-gradient(180deg, rgba(10, 22, 36, 0.42), rgba(10, 22, 36, 0.12));
+  backdrop-filter: blur(16px);
+}
+
+.lightcone-info-pill,
+.lightcone-tabs-shell,
+.lightcone-year-badge {
+  background-image:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02)),
+    linear-gradient(120deg, rgba(126, 231, 255, 0.06), transparent 34%, rgba(255, 211, 141, 0.04));
+}
+
+.lightcone-content-shell::before {
+  content: "";
+  position: absolute;
+  inset: 0.5rem 1rem auto;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(126, 231, 255, 0.28), rgba(255, 211, 141, 0.18), transparent);
+  pointer-events: none;
+}
+
+.lightcone-timeline-shell {
+  isolation: isolate;
+}
+
+.lightcone-year-badge::after {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  border-radius: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  pointer-events: none;
+}
+
+.lightcone-node-glow {
+  background: radial-gradient(circle, rgba(126, 231, 255, 0.58), transparent 70%);
+  animation: lightconePulse 4s ease-in-out infinite;
+}
+
+.lightcone-photo-frame::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    linear-gradient(140deg, rgba(126, 231, 255, 0.14), transparent 24%, transparent 72%, rgba(255, 211, 141, 0.14)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent 30%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.lightcone-photo-frame::after {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  border-radius: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  pointer-events: none;
+}
+
+.lightcone-album-flow {
+  position: relative;
+  isolation: isolate;
+}
+
+.lightcone-album-flow::before {
+  content: "";
+  position: absolute;
+  inset: -1.5rem 0 auto;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(126, 231, 255, 0.2), rgba(255, 211, 141, 0.16), transparent);
+  pointer-events: none;
+}
+
+.lightcone-stack-layer {
+  background: linear-gradient(180deg, rgba(13, 27, 42, 0.82), rgba(8, 18, 29, 0.82));
+}
+
+.lightcone-expanded-stack {
+  background:
+    radial-gradient(circle at top right, rgba(126, 231, 255, 0.1), transparent 28%),
+    linear-gradient(180deg, rgba(13, 27, 42, 0.72), rgba(8, 18, 29, 0.82));
+}
+
+.lightcone-shard-card {
+  background:
+    radial-gradient(circle at top right, rgba(126, 231, 255, 0.13), transparent 26%),
+    radial-gradient(circle at bottom left, rgba(255, 211, 141, 0.1), transparent 24%),
+    linear-gradient(180deg, rgba(13, 27, 42, 0.76), rgba(8, 18, 29, 0.88));
+}
+
+.lightcone-shard-card:hover,
+.lightcone-space-card:hover,
+.lightcone-timeline-card:hover {
+  box-shadow:
+    0 26px 52px rgba(2, 10, 22, 0.36),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .film-strip-v2 {
