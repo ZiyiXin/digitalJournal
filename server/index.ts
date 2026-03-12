@@ -2,6 +2,7 @@ import 'dotenv/config';
 import fs from 'node:fs';
 import path from 'node:path';
 import {randomUUID} from 'node:crypto';
+import {execFileSync} from 'node:child_process';
 import express from 'express';
 import multer from 'multer';
 import {
@@ -37,6 +38,8 @@ import type {CreateSpaceInput, Space} from './types';
 const app = express();
 const port = Number(process.env.PORT ?? 3001);
 const SESSION_MAX_AGE_MS = SESSION_TTL_DAYS * 24 * 60 * 60 * 1000;
+const THUMBNAIL_MAX_DIMENSION = 960;
+const THUMBNAIL_QUALITY = '80';
 
 const uploadsStorage = multer.diskStorage({
   destination: (req, _file, cb) => {
@@ -61,10 +64,60 @@ const uploadsStorage = multer.diskStorage({
 
 const upload = multer({
   storage: uploadsStorage,
+  fileFilter: (_req, file, cb) => {
+    if (!file.mimetype.startsWith('image/')) {
+      cb(new Error('Only image uploads are supported'));
+      return;
+    }
+    cb(null, true);
+  },
   limits: {
     fileSize: 8 * 1024 * 1024,
   },
 });
+
+function getThumbnailFilename(filename: string): string {
+  const ext = path.extname(filename);
+  const baseName = ext ? filename.slice(0, -ext.length) : filename;
+  return `${baseName}-thumb.jpg`;
+}
+
+function createThumbnail(sourcePath: string, outputPath: string) {
+  try {
+    execFileSync(
+      'sips',
+      [
+        '-s',
+        'format',
+        'jpeg',
+        '-s',
+        'formatOptions',
+        THUMBNAIL_QUALITY,
+        '-Z',
+        String(THUMBNAIL_MAX_DIMENSION),
+        sourcePath,
+        '--out',
+        outputPath,
+      ],
+      {stdio: 'ignore'},
+    );
+  } catch {
+    throw new Error('Failed to generate image thumbnail');
+  }
+}
+
+function cleanupFiles(paths: string[]) {
+  const seen = new Set<string>();
+  for (const filePath of paths) {
+    if (!filePath || seen.has(filePath)) continue;
+    seen.add(filePath);
+    try {
+      fs.unlinkSync(filePath);
+    } catch {
+      // Ignore cleanup failures and preserve the original error.
+    }
+  }
+}
 
 function setSessionCookie(res: express.Response, token: string) {
   res.cookie(SESSION_COOKIE_NAME, token, {
@@ -310,18 +363,23 @@ app.post('/api/uploads', requireAuth, upload.single('file'), (req, res) => {
     return;
   }
 
+  const userId = req.user!.id;
+  const originalPath = req.file.path;
+  const thumbnailFilename = getThumbnailFilename(req.file.filename);
+  const thumbnailPath = path.join(path.dirname(originalPath), thumbnailFilename);
+
   try {
-    assertStorageQuotaAvailable(req.user!.id);
+    createThumbnail(originalPath, thumbnailPath);
+    assertStorageQuotaAvailable(userId);
   } catch (error) {
-    try {
-      fs.unlinkSync(req.file.path);
-    } catch {
-      // Ignore cleanup failures and surface the original quota error.
-    }
+    cleanupFiles([originalPath, thumbnailPath]);
     throw error;
   }
 
-  res.status(201).json({url: `/uploads/${req.user!.id}/${req.file.filename}`});
+  res.status(201).json({
+    url: `/uploads/${userId}/${req.file.filename}`,
+    thumbnailUrl: `/uploads/${userId}/${thumbnailFilename}`,
+  });
 });
 
 app.get('/api/spaces', requireAuth, (req, res) => {

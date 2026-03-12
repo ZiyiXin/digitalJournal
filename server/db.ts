@@ -48,10 +48,12 @@ db.exec(`
     owner_id TEXT NOT NULL DEFAULT '',
     name TEXT NOT NULL,
     avatar_image TEXT NOT NULL,
+    avatar_thumbnail_image TEXT NOT NULL DEFAULT '',
     avatar_x REAL NOT NULL DEFAULT 50,
     avatar_y REAL NOT NULL DEFAULT 50,
     avatar_scale REAL NOT NULL DEFAULT 1,
     hero_image TEXT NOT NULL,
+    hero_thumbnail_image TEXT NOT NULL DEFAULT '',
     visibility TEXT NOT NULL DEFAULT 'private',
     description TEXT NOT NULL DEFAULT '',
     info_capsules TEXT NOT NULL DEFAULT '${DEFAULT_INFO_CAPSULES_JSON}',
@@ -78,6 +80,7 @@ db.exec(`
     owner_id TEXT NOT NULL DEFAULT '',
     entry_id TEXT NOT NULL,
     image_url TEXT NOT NULL,
+    thumbnail_url TEXT NOT NULL DEFAULT '',
     text TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (entry_id) REFERENCES timeline_entries(id) ON DELETE CASCADE
@@ -115,12 +118,29 @@ ensureColumn('users', 'storage_limit_bytes', `INTEGER NOT NULL DEFAULT ${DEFAULT
 ensureColumn('spaces', 'avatar_x', 'REAL NOT NULL DEFAULT 50');
 ensureColumn('spaces', 'avatar_y', 'REAL NOT NULL DEFAULT 50');
 ensureColumn('spaces', 'avatar_scale', 'REAL NOT NULL DEFAULT 1');
+ensureColumn('spaces', 'avatar_thumbnail_image', "TEXT NOT NULL DEFAULT ''");
 ensureColumn('spaces', 'owner_id', "TEXT NOT NULL DEFAULT ''");
 ensureColumn('spaces', 'visibility', "TEXT NOT NULL DEFAULT 'private'");
 ensureColumn('spaces', 'info_capsules', `TEXT NOT NULL DEFAULT '${DEFAULT_INFO_CAPSULES_JSON}'`);
+ensureColumn('spaces', 'hero_thumbnail_image', "TEXT NOT NULL DEFAULT ''");
 ensureColumn('timeline_entries', 'owner_id', "TEXT NOT NULL DEFAULT ''");
 ensureColumn('timeline_images', 'owner_id', "TEXT NOT NULL DEFAULT ''");
+ensureColumn('timeline_images', 'thumbnail_url', "TEXT NOT NULL DEFAULT ''");
 ensureColumn('treehole_entries', 'owner_id', "TEXT NOT NULL DEFAULT ''");
+
+db.exec(`
+  UPDATE spaces
+  SET avatar_thumbnail_image = avatar_image
+  WHERE avatar_image <> '' AND (avatar_thumbnail_image IS NULL OR avatar_thumbnail_image = '');
+
+  UPDATE spaces
+  SET hero_thumbnail_image = hero_image
+  WHERE hero_image <> '' AND (hero_thumbnail_image IS NULL OR hero_thumbnail_image = '');
+
+  UPDATE timeline_images
+  SET thumbnail_url = image_url
+  WHERE image_url <> '' AND (thumbnail_url IS NULL OR thumbnail_url = '');
+`);
 
 db.exec(`
   CREATE INDEX IF NOT EXISTS idx_spaces_owner_created

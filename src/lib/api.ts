@@ -1,4 +1,4 @@
-import type {AccountDashboardStats, AdminDashboardStats, Space, User} from '../types';
+import type {AccountDashboardStats, AdminDashboardStats, ImageUploadResult, Space, User} from '../types';
 
 type JsonOptions = Omit<RequestInit, 'body'> & {
   body?: unknown;
@@ -85,7 +85,9 @@ export async function fetchSpaces(): Promise<Space[]> {
 export async function createSpace(payload: {
   name: string;
   avatarImage: string;
+  avatarThumbnailImage?: string;
   heroImage?: string;
+  heroThumbnailImage?: string;
   description?: string;
 }): Promise<Space> {
   return requestJson<Space>('/api/spaces', {
@@ -96,7 +98,12 @@ export async function createSpace(payload: {
 
 export async function updateSpaceMeta(
   id: string,
-  payload: Partial<Pick<Space, 'name' | 'avatarImage' | 'heroImage' | 'description' | 'infoCapsules'>>,
+  payload: Partial<
+    Pick<
+      Space,
+      'name' | 'avatarImage' | 'avatarThumbnailImage' | 'heroImage' | 'heroThumbnailImage' | 'description' | 'infoCapsules'
+    >
+  >,
 ): Promise<Space> {
   return requestJson<Space>(`/api/spaces/${id}`, {
     method: 'PUT',
@@ -117,7 +124,7 @@ export async function saveSpaceSnapshot(space: Space): Promise<Space> {
   });
 }
 
-export async function uploadImage(file: File): Promise<string> {
+export async function uploadImage(file: File): Promise<ImageUploadResult> {
   const formData = new FormData();
   formData.append('file', file);
 
@@ -138,8 +145,8 @@ export async function uploadImage(file: File): Promise<string> {
     throw new ApiError(message, response.status);
   }
 
-  const payload = (await response.json()) as {url: string};
-  return payload.url;
+  const payload = (await response.json()) as ImageUploadResult;
+  return payload;
 }
 
 export async function fetchAdminDashboard(): Promise<AdminDashboardStats> {

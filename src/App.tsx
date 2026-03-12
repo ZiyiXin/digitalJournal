@@ -52,10 +52,12 @@ import type {
   AccountDashboardStats,
   AdminDashboardStats,
   AvatarFocus,
+  ImageUploadResult,
   InfoCapsule,
   InfoCapsuleType,
   Space,
   TimelineEntry,
+  TimelineImage,
   TreeholeEntry,
   User,
 } from './types';
@@ -403,6 +405,20 @@ function formatPercent(value: number): string {
   return `${safeValue.toFixed(fractionDigits)}%`;
 }
 
+function getUploadPreviewUrl(upload?: ImageUploadResult | null): string {
+  if (!upload) return '';
+  return upload.thumbnailUrl || upload.url;
+}
+
+function getTimelineImagePreviewUrl(image?: Partial<TimelineImage> | null): string {
+  if (!image) return TIMELINE_COVER_FALLBACK;
+  return image.thumbnailUrl || image.imageUrl || TIMELINE_COVER_FALLBACK;
+}
+
+function getSpaceImagePreviewUrl(originalUrl?: string, thumbnailUrl?: string): string {
+  return thumbnailUrl || originalUrl || '';
+}
+
 // --- Safe Image Component ---
 function SafeImage({
   src,
@@ -410,16 +426,27 @@ function SafeImage({
   className,
   onClick,
   style,
+  loading = 'lazy',
+  decoding = 'async',
+  fetchPriority,
 }: {
   src?: string,
   alt?: string,
   className?: string,
   onClick?: () => void,
   style?: React.CSSProperties,
+  loading?: 'eager' | 'lazy',
+  decoding?: 'async' | 'auto' | 'sync',
+  fetchPriority?: 'high' | 'low' | 'auto',
 }) {
   const [error, setError] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  
+
+  React.useEffect(() => {
+    setError(false);
+    setLoaded(false);
+  }, [src]);
+
   if (error || !src) {
     return (
       <div 
@@ -443,6 +470,9 @@ function SafeImage({
       onClick={onClick} 
       style={style}
       draggable={false}
+      loading={loading}
+      decoding={decoding}
+      fetchPriority={fetchPriority}
     />
   );
 }
@@ -688,7 +718,7 @@ type SpaceDetailProps = {
   themeName: ThemeName;
   setThemeName: (theme: ThemeName) => void;
   viewerName: string;
-  onUploadImage: (file: File) => Promise<string>;
+  onUploadImage: (file: File) => Promise<ImageUploadResult>;
   onOpenAccountPanel: () => void;
   canOpenAdminPanel: boolean;
   onOpenAdminPanel: () => void;
@@ -724,7 +754,9 @@ function SpaceDetail({
 
   // Customizable Hero and Avatar
   const [heroImage, setHeroImage] = useState(space.heroImage);
+  const [heroThumbnailImage, setHeroThumbnailImage] = useState(space.heroThumbnailImage ?? space.heroImage);
   const [avatarImage, setAvatarImage] = useState(space.avatarImage);
+  const [avatarThumbnailImage, setAvatarThumbnailImage] = useState(space.avatarThumbnailImage ?? space.avatarImage);
   const [avatarFocus, setAvatarFocus] = useState<AvatarFocus>(normalizeAvatarFocus(space.avatarFocus));
   const [isAvatarAdjustOpen, setIsAvatarAdjustOpen] = useState(false);
   const [avatarFocusDraft, setAvatarFocusDraft] = useState<AvatarFocus>(normalizeAvatarFocus(space.avatarFocus));
@@ -793,7 +825,9 @@ function SpaceDetail({
     setTimelineEntries(space.entries);
     setTreeholeEntries(space.treeholeEntries);
     setHeroImage(space.heroImage);
+    setHeroThumbnailImage(space.heroThumbnailImage ?? space.heroImage);
     setAvatarImage(space.avatarImage);
+    setAvatarThumbnailImage(space.avatarThumbnailImage ?? space.avatarImage);
     const incomingAvatarFocus = normalizeAvatarFocus(space.avatarFocus);
     setAvatarFocus(incomingAvatarFocus);
     setAvatarFocusDraft(incomingAvatarFocus);
@@ -819,18 +853,36 @@ function SpaceDetail({
       entries: timelineEntries,
       treeholeEntries,
       heroImage,
+      heroThumbnailImage,
       avatarImage,
+      avatarThumbnailImage,
       avatarFocus,
     });
-  }, [timelineEntries, treeholeEntries, heroImage, avatarImage, avatarFocus, infoCapsules, onUpdateSpace, space.id, space.name, spaceDescription]);
+  }, [
+    timelineEntries,
+    treeholeEntries,
+    heroImage,
+    heroThumbnailImage,
+    avatarImage,
+    avatarThumbnailImage,
+    avatarFocus,
+    infoCapsules,
+    onUpdateSpace,
+    space.id,
+    space.name,
+    spaceDescription,
+  ]);
 
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, setter: (url: string) => void) => {
+  const handleImageUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+    setter: (upload: ImageUploadResult) => void,
+  ) => {
     const file = e.target.files?.[0];
     if (file) {
       setIsUploadingImage(true);
       try {
-        const url = await onUploadImage(file);
-        setter(url);
+        const upload = await onUploadImage(file);
+        setter(upload);
       } catch (error) {
         const message = error instanceof Error ? error.message : '图片上传失败';
         notify(message);
@@ -839,6 +891,9 @@ function SpaceDetail({
       }
     }
   };
+
+  const heroDisplayImage = getSpaceImagePreviewUrl(heroImage, heroThumbnailImage);
+  const avatarDisplayImage = getSpaceImagePreviewUrl(avatarImage, avatarThumbnailImage);
 
   const openAvatarAdjuster = () => {
     setAvatarFocusDraft(avatarFocus);
@@ -933,22 +988,37 @@ function SpaceDetail({
     setAvatarFocusDraft((prev) => ({ ...prev, scale: nextScale }));
   };
 
-  const handleUploadImage = async (file: File): Promise<string> => onUploadImage(file);
+  const handleUploadImage = async (file: File): Promise<ImageUploadResult> => onUploadImage(file);
 
   const sortByDateDesc = <T extends {date: string}>(items: T[]): T[] =>
     [...items].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   const handleAddEntry = (type: 'timeline' | 'album' | 'treehole', data: any) => {
     const newId = Date.now().toString();
-    const imageUrls = Array.isArray(data.imageUrls)
-      ? data.imageUrls
-          .filter((url: unknown): url is string => typeof url === 'string' && url.trim().length > 0)
+    const uploadedImages = Array.isArray(data.images)
+      ? data.images
+          .filter((image: unknown): image is ImageUploadResult => (
+            Boolean(image) &&
+            typeof image === 'object' &&
+            typeof (image as ImageUploadResult).url === 'string' &&
+            (image as ImageUploadResult).url.trim().length > 0
+          ))
           .slice(0, MAX_ENTRY_UPLOAD_IMAGES)
-      : typeof data.imageUrl === 'string' && data.imageUrl.trim().length > 0
-        ? [data.imageUrl]
-        : [];
+      : Array.isArray(data.imageUrls)
+        ? data.imageUrls
+            .filter((url: unknown): url is string => typeof url === 'string' && url.trim().length > 0)
+            .slice(0, MAX_ENTRY_UPLOAD_IMAGES)
+            .map((url) => ({url, thumbnailUrl: url}))
+        : typeof data.imageUrl === 'string' && data.imageUrl.trim().length > 0
+          ? [{url: data.imageUrl, thumbnailUrl: data.imageUrl}]
+          : [];
     const createImages = (baseId: string, text?: string) =>
-      imageUrls.map((url, idx) => ({ id: `${baseId}-${idx}`, imageUrl: url, text }));
+      uploadedImages.map((image, idx) => ({
+        id: `${baseId}-${idx}`,
+        imageUrl: image.url,
+        thumbnailUrl: image.thumbnailUrl || image.url,
+        text,
+      }));
     const appendImagesWithLimit = (
       existingImages: TimelineEntry['images'],
       incomingImages: TimelineEntry['images'],
@@ -998,8 +1068,8 @@ function SpaceDetail({
       const { eventId, title, date, text } = data;
       
       if (eventId === 'loose') {
-        if (imageUrls.length > 0) {
-          const looseEntries: TimelineEntry[] = imageUrls.map((url, idx) => {
+        if (uploadedImages.length > 0) {
+          const looseEntries: TimelineEntry[] = uploadedImages.map((image, idx) => {
             const looseId = `${newId}-${idx}`;
             return {
               id: looseId,
@@ -1007,7 +1077,12 @@ function SpaceDetail({
               date,
               description: '',
               rotation: (Math.random() * 4) - 2,
-              images: [{ id: `${looseId}-img`, imageUrl: url, text }],
+              images: [{
+                id: `${looseId}-img`,
+                imageUrl: image.url,
+                thumbnailUrl: image.thumbnailUrl || image.url,
+                text,
+              }],
               type: 'loose_photo',
             };
           });
@@ -1330,7 +1405,7 @@ function SpaceDetail({
       {/* Hero Area */}
       <div className={`group/hero relative min-h-[34vh] md:min-h-[36vh] w-full flex flex-col items-center justify-start pt-8 md:pt-10 pb-2 ${lightconeMode ? 'lightcone-hero-shell' : ''}`}>
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <img src={heroImage} alt="Hero Background" className={`w-full h-full object-cover blur-md scale-105 opacity-70 ${theme.imageFilter}`} />
+          <img src={heroDisplayImage} alt="Hero Background" className={`w-full h-full object-cover blur-md scale-105 opacity-70 ${theme.imageFilter}`} />
           <div className={`absolute inset-0 bg-gradient-to-b ${theme.headerBg}`}></div>
           {lightconeMode && (
             <>
@@ -1347,7 +1422,7 @@ function SpaceDetail({
               className={`w-20 h-20 md:w-24 md:h-24 rounded-full overflow-hidden border-[4px] border-white shadow-[0_8px_24px_rgba(244,114,182,0.25)] mb-3.5 relative z-10 ${theme.cardBg} ${lightconeMode ? 'lightcone-avatar-shell' : ''}`}
             >
               <img
-                src={avatarImage}
+                src={avatarDisplayImage}
                 alt="Avatar"
                 className={`w-full h-full object-cover ${theme.imageFilter}`}
                 style={{
@@ -1365,8 +1440,9 @@ function SpaceDetail({
                   accept="image/*"
                   disabled={isUploadingImage}
                   onChange={(e) =>
-                    void handleImageUpload(e, (url) => {
+                    void handleImageUpload(e, ({url, thumbnailUrl}) => {
                       setAvatarImage(url);
+                      setAvatarThumbnailImage(thumbnailUrl);
                       setAvatarFocus(DEFAULT_AVATAR_FOCUS);
                       setAvatarFocusDraft(DEFAULT_AVATAR_FOCUS);
                     })
@@ -1468,7 +1544,12 @@ function SpaceDetail({
             className="hidden"
             accept="image/*"
             disabled={isUploadingImage}
-            onChange={(e) => void handleImageUpload(e, setHeroImage)}
+            onChange={(e) =>
+              void handleImageUpload(e, ({url, thumbnailUrl}) => {
+                setHeroImage(url);
+                setHeroThumbnailImage(thumbnailUrl);
+              })
+            }
           />
         </label>
       </div>
@@ -1620,7 +1701,7 @@ function SpaceDetail({
                 onTouchStart={handleAvatarTouchStart}
               >
                 <img
-                  src={avatarImage}
+                  src={avatarDisplayImage}
                   alt="Avatar Preview"
                   className={`w-full h-full object-cover select-none pointer-events-none ${theme.imageFilter}`}
                   draggable={false}
@@ -2024,7 +2105,7 @@ function TimelineFolderClassic({
   const theme = useTheme();
   const [isExpanded, setIsExpanded] = useState(false);
   const isEven = index % 2 === 0;
-  const coverImage = entry.images.length > 0 ? entry.images[0].imageUrl : TIMELINE_COVER_FALLBACK;
+  const coverImage = entry.images.length > 0 ? getTimelineImagePreviewUrl(entry.images[0]) : TIMELINE_COVER_FALLBACK;
   const expandedImages = entry.images;
   const ExpandArrowIcon = isExpanded ? (isEven ? ChevronRight : ChevronLeft) : ChevronDown;
   const coverRatio = useCoverImageRatio(coverImage);
@@ -2146,7 +2227,7 @@ function TimelineFolderClassic({
                       onClick={() => onImageClick(img.imageUrl, img.text)}
                       className={`group/photo relative w-full shrink-0 border ${theme.cardBorder} ${theme.cardBg} shadow-sm overflow-hidden`}
                     >
-                      <SafeImage src={img.imageUrl} className={`w-full aspect-[4/5] object-cover ${theme.imageFilter}`} />
+                      <SafeImage src={getTimelineImagePreviewUrl(img)} className={`w-full aspect-[4/5] object-cover ${theme.imageFilter}`} />
                       {img.text?.trim() && (
                         <>
                           <div className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-black/80 to-transparent opacity-0 transition-opacity duration-200 group-hover/photo:opacity-100" />
@@ -2182,7 +2263,7 @@ function TimelineFolderLightcone({
   const activeImage = hasImages ? entry.images[activeImageIndex] ?? entry.images[0] : null;
   const coverFocus = entry.coverFocus ?? { x: 50, y: 42 };
   const previewImages = entry.images;
-  const previewImageUrl = activeImage?.imageUrl ?? entry.images[0]?.imageUrl ?? TIMELINE_COVER_FALLBACK;
+  const previewImageUrl = getTimelineImagePreviewUrl(activeImage ?? entry.images[0]);
   const previewFrameRatio = useCoverImageRatio(previewImageUrl);
   const cardLaneClass = isEven ? 'md:col-start-3 md:justify-self-start' : 'md:col-start-1 md:justify-self-end';
   const eventSummary = entry.description?.trim() ?? '';
@@ -2333,7 +2414,7 @@ function TimelineFolderLightcone({
                                 : 'border-[#314D68]/70 bg-[#0F1B29] hover:border-[#6E89A4]'
                             }`}
                           >
-                            <SafeImage src={img.imageUrl} className={`h-14 w-14 object-cover ${theme.imageFilter}`} />
+                            <SafeImage src={getTimelineImagePreviewUrl(img)} className={`h-14 w-14 object-cover ${theme.imageFilter}`} />
                           </button>
                         ))}
                       </div>
@@ -2378,7 +2459,7 @@ function TimelineFolderCinema({
   const activeImage = hasImages ? entry.images[activeImageIndex] ?? entry.images[0] : null;
   const coverFocus = entry.coverFocus ?? { x: 50, y: 42 };
   const previewImages = entry.images.slice(0, 4);
-  const previewImageUrl = activeImage?.imageUrl ?? entry.images[0]?.imageUrl ?? TIMELINE_COVER_FALLBACK;
+  const previewImageUrl = getTimelineImagePreviewUrl(activeImage ?? entry.images[0]);
   const previewFrameRatio = useCoverImageRatio(previewImageUrl);
   const cardLaneClass = isEven ? 'md:col-start-3 md:justify-self-start' : 'md:col-start-1 md:justify-self-end';
   const eventSummary = entry.description?.trim() ?? '';
@@ -2521,7 +2602,7 @@ function TimelineFolderCinema({
                                   : 'border-white/10 bg-[#101923] hover:border-white/30'
                               }`}
                             >
-                              <SafeImage src={img.imageUrl} className={`h-14 w-14 object-cover ${theme.imageFilter}`} />
+                              <SafeImage src={getTimelineImagePreviewUrl(img)} className={`h-14 w-14 object-cover ${theme.imageFilter}`} />
                             </button>
                           ))}
                         </div>
@@ -2704,11 +2785,7 @@ const LoosePhotoPolaroid: React.FC<{
   if (!img) return null;
 
   return (
-    <motion.div 
-      layout="position"
-      className="relative w-full group mb-6"
-      style={{ transform: `rotate(${entry.rotation}deg)` }}
-    >
+    <div className="relative w-full group mb-6" style={{ transform: `rotate(${entry.rotation}deg)` }}>
       {!hideActions && (
         <div className="absolute top-2 right-2 z-30 flex items-center gap-1">
           <button
@@ -2734,10 +2811,10 @@ const LoosePhotoPolaroid: React.FC<{
         </div>
       )}
       <div 
-        className={`relative z-20 overflow-hidden transition-all duration-300 group-hover:-translate-y-1 cursor-zoom-in border ${theme.cardBorder} ${lightconeMode ? 'lightcone-loose-photo rounded-[26px] shadow-[0_18px_42px_rgba(2,10,22,0.34)]' : 'shadow-sm rounded-sm group-hover:shadow-md'}`}
+        className={`photo-stable relative z-20 overflow-hidden transition-[transform,box-shadow] duration-300 group-hover:-translate-y-1 cursor-zoom-in border ${theme.cardBorder} ${lightconeMode ? 'lightcone-loose-photo rounded-[26px] shadow-[0_18px_42px_rgba(2,10,22,0.34)]' : 'shadow-sm rounded-sm group-hover:shadow-md'}`}
         onClick={() => onImageClick(img.imageUrl, img.text)}
       >
-        <SafeImage src={img.imageUrl} className={`w-full h-auto object-cover transition-transform duration-700 group-hover:scale-105 ${theme.imageFilter}`} />
+        <SafeImage src={getTimelineImagePreviewUrl(img)} className={`photo-stable w-full h-auto object-cover transition-transform duration-700 group-hover:scale-105 ${theme.imageFilter}`} />
       </div>
       
       {img.text && (
@@ -2747,7 +2824,7 @@ const LoosePhotoPolaroid: React.FC<{
           </p>
         </div>
       )}
-    </motion.div>
+    </div>
   );
 };
 
@@ -2763,7 +2840,7 @@ const AlbumStack: React.FC<{
   const lightconeMode = isLightconeTheme(theme);
 
   return (
-    <motion.div layout="position" className="relative flex flex-col w-full mb-6">
+    <div className="relative flex flex-col w-full mb-6">
       <AnimatePresence mode="popLayout" initial={false}>
         {!isExpanded ? (
           <motion.div 
@@ -2808,13 +2885,13 @@ const AlbumStack: React.FC<{
                   zIndex: 10 - i
                 }}
               >
-                <SafeImage src={img.imageUrl} className={`w-full h-full object-cover opacity-70 ${lightconeMode ? 'brightness-[0.65] saturate-[0.9]' : 'grayscale-[30%]'}`} />
+                <SafeImage src={getTimelineImagePreviewUrl(img)} className={`photo-stable w-full h-full object-cover opacity-70 ${lightconeMode ? 'brightness-[0.65] saturate-[0.9]' : 'grayscale-[30%]'}`} />
               </div>
             ))}
             
             {/* Top Photo */}
-            <div className={`relative z-20 overflow-hidden group-hover:-translate-y-1 transition-transform duration-300 border ${theme.cardBorder} ${lightconeMode ? 'lightcone-stack-card rounded-[26px] shadow-[0_18px_42px_rgba(2,10,22,0.32)]' : 'shadow-md rounded-sm'}`}>
-              <SafeImage src={entry.images[0].imageUrl} className={`w-full h-auto object-cover ${theme.imageFilter}`} />
+            <div className={`photo-stable relative z-20 overflow-hidden group-hover:-translate-y-1 transition-transform duration-300 border ${theme.cardBorder} ${lightconeMode ? 'lightcone-stack-card rounded-[26px] shadow-[0_18px_42px_rgba(2,10,22,0.32)]' : 'shadow-md rounded-sm'}`}>
+              <SafeImage src={getTimelineImagePreviewUrl(entry.images[0])} className={`photo-stable w-full h-auto object-cover ${theme.imageFilter}`} />
               
               {/* Overlay Info */}
               <div className={`absolute inset-0 flex flex-col justify-end p-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300 ${lightconeMode ? 'bg-gradient-to-t from-[#040A11]/88 via-[#081523]/20 to-transparent' : 'bg-gradient-to-t from-black/60 via-black/10 to-transparent'}`}>
@@ -2886,10 +2963,10 @@ const AlbumStack: React.FC<{
                   style={{ transform: `rotate(${idx % 2 === 0 ? -1 : 1}deg)` }}
                 >
                   <div 
-                    className={`overflow-hidden cursor-zoom-in border ${theme.cardBorder} ${theme.cardBg} ${lightconeMode ? 'lightcone-photo-frame rounded-[24px] shadow-[0_18px_40px_rgba(2,10,22,0.26)]' : 'rounded-sm shadow-sm'}`}
+                    className={`photo-stable overflow-hidden cursor-zoom-in border ${theme.cardBorder} ${theme.cardBg} ${lightconeMode ? 'lightcone-photo-frame rounded-[24px] shadow-[0_18px_40px_rgba(2,10,22,0.26)]' : 'rounded-sm shadow-sm'}`}
                     onClick={() => onImageClick(img.imageUrl, img.text)}
                   >
-                    <SafeImage src={img.imageUrl} className={`w-full h-auto object-cover group-hover:scale-[1.02] transition-transform duration-500 ${theme.imageFilter}`} />
+                    <SafeImage src={getTimelineImagePreviewUrl(img)} className={`photo-stable w-full h-auto object-cover group-hover:scale-[1.02] transition-transform duration-500 ${theme.imageFilter}`} />
                   </div>
                   {img.text && (
                     <p className={`${theme.textMuted} text-sm mt-3 font-serif font-medium px-2 leading-relaxed text-center ${lightconeMode ? 'text-[#C6D6E8]' : ''}`}>
@@ -2902,7 +2979,7 @@ const AlbumStack: React.FC<{
           </motion.div>
         )}
       </AnimatePresence>
-    </motion.div>
+    </div>
   );
 }
 
@@ -2915,7 +2992,7 @@ function AddEntryModal({
   onClose: () => void;
   onAdd: (type: 'timeline' | 'album' | 'treehole', data: any) => void;
   existingEvents: TimelineEntry[];
-  onUploadImage: (file: File) => Promise<string>;
+  onUploadImage: (file: File) => Promise<ImageUploadResult>;
 }) {
   const theme = useTheme();
   const lightconeMode = isLightconeTheme(theme);
@@ -2925,7 +3002,7 @@ function AddEntryModal({
   const [title, setTitle] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [description, setDescription] = useState('');
-  const [imageUrls, setImageUrls] = useState<string[]>([]);
+  const [uploadedImages, setUploadedImages] = useState<ImageUploadResult[]>([]);
   const [text, setText] = useState('');
   const [isUploadingImage, setIsUploadingImage] = useState(false);
 
@@ -2936,12 +3013,12 @@ function AddEntryModal({
 
     setIsUploadingImage(true);
     try {
-      const uploadedUrls: string[] = [];
+      const nextUploads: ImageUploadResult[] = [];
       for (const file of filesToUpload) {
-        const url = await onUploadImage(file);
-        uploadedUrls.push(url);
+        const upload = await onUploadImage(file);
+        nextUploads.push(upload);
       }
-      setImageUrls(uploadedUrls);
+      setUploadedImages(nextUploads);
       if (selectedFiles.length > MAX_ENTRY_UPLOAD_IMAGES) {
         notify(`一次最多上传 ${MAX_ENTRY_UPLOAD_IMAGES} 张，已保留前 ${MAX_ENTRY_UPLOAD_IMAGES} 张。`);
       }
@@ -2958,11 +3035,11 @@ function AddEntryModal({
     e.preventDefault();
     if (type === 'timeline') {
       if (eventId === 'new' && (!title.trim() || !date)) return;
-      onAdd(type, { eventId, title, date, description, imageUrls, text });
+      onAdd(type, { eventId, title, date, description, images: uploadedImages, text });
     } else if (type === 'album') {
       if ((eventId === 'new' || eventId === 'loose') && !date) return;
       if (eventId === 'new' && !title.trim()) return;
-      onAdd(type, { eventId, title, date, imageUrls, text });
+      onAdd(type, { eventId, title, date, images: uploadedImages, text });
     } else if (type === 'treehole') {
       if (!text.trim()) return;
       onAdd('treehole', { date, text });
@@ -2994,7 +3071,7 @@ function AddEntryModal({
             <button
               key={t}
               type="button"
-              onClick={() => { setType(t); setEventId(t === 'album' ? 'loose' : 'new'); setImageUrls([]); setText(''); }}
+              onClick={() => { setType(t); setEventId(t === 'album' ? 'loose' : 'new'); setUploadedImages([]); setText(''); }}
               className={`flex-1 py-3 text-sm font-bold rounded-xl transition-all flex items-center justify-center gap-2 ${
                 type === t ? `${theme.cardBg} ${theme.accent} shadow-sm` : `${theme.textMuted} hover:opacity-80`
               }`}
@@ -3137,18 +3214,18 @@ function AddEntryModal({
               <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="mt-4">
                 <label className={`block text-sm font-bold mb-2 tracking-widest ${lightconeMode ? 'text-[#8FA9C4]' : 'text-stone-500'}`}>上传照片 (可选，单次最多 10 张；单个事件/相册最多 30 张)</label>
                 <label className={`relative flex flex-col items-center justify-center w-full h-36 border-2 border-dashed rounded-xl transition-colors cursor-pointer overflow-hidden group ${lightconeMode ? 'border-[#35516C]/72 bg-[#102033]/72 hover:bg-[#13263A]' : 'border-pink-200 bg-pink-50/50 hover:bg-pink-50'}`}>
-                  {imageUrls.length > 0 ? (
+                  {uploadedImages.length > 0 ? (
                     <div className="relative w-full h-full p-2">
                       <div className="grid h-full grid-cols-5 gap-1">
-                        {imageUrls.slice(0, 10).map((url, idx) => (
-                          <img key={`${url}-${idx}`} src={url} className="h-full w-full rounded-md object-cover" alt={`Preview ${idx + 1}`} />
+                        {uploadedImages.slice(0, 10).map((upload, idx) => (
+                          <img key={`${upload.url}-${idx}`} src={getUploadPreviewUrl(upload)} className="h-full w-full rounded-md object-cover" alt={`Preview ${idx + 1}`} />
                         ))}
                       </div>
                       <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                         <span className="text-white font-medium text-sm">点击重新选择图片</span>
                       </div>
                       <span className="absolute right-2 top-2 rounded-full bg-black/60 px-2 py-1 text-xs font-bold text-white">
-                        {imageUrls.length} / {MAX_ENTRY_UPLOAD_IMAGES}
+                        {uploadedImages.length} / {MAX_ENTRY_UPLOAD_IMAGES}
                       </span>
                     </div>
                   ) : (
@@ -3162,7 +3239,7 @@ function AddEntryModal({
               </motion.div>
 
               {/* Image Text/Remark Field */}
-              {imageUrls.length > 0 && (
+              {uploadedImages.length > 0 && (
                 <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="mt-4">
                   <label className={`block text-sm font-bold mb-2 tracking-widest ${lightconeMode ? 'text-[#8FA9C4]' : 'text-stone-500'}`}>照片备注 (可选，批量上传会应用到全部照片)</label>
                   <textarea
@@ -4037,17 +4114,17 @@ function Portal({
   portalTitle: string;
   onUpdatePortalTitle: (title: string) => void;
   onSelectSpace: (id: string) => void;
-  onCreateSpace: (name: string, avatar: string) => Promise<void>;
+  onCreateSpace: (name: string, avatar: ImageUploadResult) => Promise<void>;
   onRenameSpace: (id: string, name: string) => Promise<void>;
   onDeleteSpace: (id: string) => Promise<void>;
-  onUploadImage: (file: File) => Promise<string>;
+  onUploadImage: (file: File) => Promise<ImageUploadResult>;
 }) {
   const theme = useTheme();
   const lightconeMode = isLightconeTheme(theme);
   const notify = useNotice();
   const [isCreating, setIsCreating] = useState(false);
   const [newName, setNewName] = useState('');
-  const [newAvatar, setNewAvatar] = useState('');
+  const [newAvatar, setNewAvatar] = useState<ImageUploadResult | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [renameTarget, setRenameTarget] = useState<Space | null>(null);
@@ -4079,7 +4156,7 @@ function Portal({
         await onCreateSpace(newName, newAvatar);
         setIsCreating(false);
         setNewName('');
-        setNewAvatar('');
+        setNewAvatar(null);
       } catch (error) {
         const message = error instanceof Error ? error.message : '创建空间失败';
         notify(message);
@@ -4094,8 +4171,8 @@ function Portal({
     if (file) {
       setIsUploadingAvatar(true);
       try {
-        const url = await onUploadImage(file);
-        setNewAvatar(url);
+        const upload = await onUploadImage(file);
+        setNewAvatar(upload);
       } catch (error) {
         const message = error instanceof Error ? error.message : '头像上传失败';
         notify(message);
@@ -4253,7 +4330,7 @@ function Portal({
                     {/* Tipped-in Photo */}
                     <div className={`relative w-full flex-1 overflow-hidden ${lightconeMode ? 'rounded-[1.35rem] border border-[#2B4761]/75 bg-[#07111A] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]' : 'bg-stone-200 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.05)]'}`}>
                       <img
-                        src={space.avatarImage}
+                        src={getSpaceImagePreviewUrl(space.avatarImage, space.avatarThumbnailImage)}
                         alt={space.name}
                         className="w-full h-full object-cover filter contrast-[1.02] transition-transform duration-700"
                         style={{
@@ -4364,7 +4441,7 @@ function Portal({
                   <div className="flex items-center justify-center w-full">
                     <label className={`flex flex-col items-center justify-center w-full h-48 cursor-pointer transition-colors overflow-hidden relative ${lightconeMode ? 'rounded-[1.5rem] border border-[#35516C]/72 bg-[#102033]/72 hover:bg-[#13263A]' : 'border border-stone-300 border-dashed bg-stone-50/50 hover:bg-stone-100/50'}`}>
                       {newAvatar ? (
-                        <img src={newAvatar} alt="Preview" className="w-full h-full object-cover" />
+                        <img src={getUploadPreviewUrl(newAvatar)} alt="Preview" className="w-full h-full object-cover" />
                       ) : (
                         <div className="flex flex-col items-center justify-center pt-5 pb-6">
                           <Camera className={`w-6 h-6 mb-3 ${lightconeMode ? 'text-[#8AE7FF]' : 'text-stone-400'}`} strokeWidth={1.5} />
@@ -4906,11 +4983,12 @@ export default function App() {
     }, 400);
   }, [flushSpaceSave]);
 
-  const handleCreateSpace = useCallback(async (name: string, avatarImage: string) => {
+  const handleCreateSpace = useCallback(async (name: string, avatar: ImageUploadResult) => {
     try {
       const created = await createSpace({
         name,
-        avatarImage,
+        avatarImage: avatar.url,
+        avatarThumbnailImage: avatar.thumbnailUrl,
       });
       setSpaces((prev) => [...prev, created]);
       void loadAccountStats();
@@ -4964,9 +5042,9 @@ export default function App() {
 
   const handleUploadImage = useCallback(async (file: File) => {
     try {
-      const url = await uploadImage(file);
+      const upload = await uploadImage(file);
       void loadAccountStats();
-      return url;
+      return upload;
     } catch (error) {
       if (isApiError(error) && error.status === 401) {
         notify('登录状态已失效，请重新登录');

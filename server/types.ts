@@ -2,9 +2,15 @@ export type TimelineEntryType = 'timeline' | 'album' | 'loose_photo';
 export type SpaceVisibility = 'private' | 'public' | 'friends' | 'custom';
 export type InfoCapsuleType = 'date' | 'zodiac' | 'location' | 'custom';
 
+export interface ImageUploadResult {
+  url: string;
+  thumbnailUrl: string;
+}
+
 export interface TimelineImage {
   id: string;
   imageUrl: string;
+  thumbnailUrl?: string;
   text?: string;
 }
 
@@ -49,8 +55,10 @@ export interface Space {
   id: string;
   name: string;
   avatarImage: string;
+  avatarThumbnailImage?: string;
   avatarFocus: AvatarFocus;
   heroImage: string;
+  heroThumbnailImage?: string;
   description: string;
   infoCapsules: InfoCapsule[];
   visibility?: SpaceVisibility;
@@ -61,8 +69,10 @@ export interface Space {
 export interface CreateSpaceInput {
   name: string;
   avatarImage: string;
+  avatarThumbnailImage?: string;
   avatarFocus?: AvatarFocus;
   heroImage?: string;
+  heroThumbnailImage?: string;
   description?: string;
   infoCapsules?: InfoCapsule[];
   visibility?: SpaceVisibility;

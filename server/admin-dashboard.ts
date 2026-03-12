@@ -217,9 +217,15 @@ function listUploadReferences(): {
       `
       SELECT image_url AS url FROM timeline_images
       UNION ALL
+      SELECT thumbnail_url AS url FROM timeline_images
+      UNION ALL
       SELECT avatar_image AS url FROM spaces
       UNION ALL
+      SELECT avatar_thumbnail_image AS url FROM spaces
+      UNION ALL
       SELECT hero_image AS url FROM spaces
+      UNION ALL
+      SELECT hero_thumbnail_image AS url FROM spaces
       UNION ALL
       SELECT avatar_image AS url FROM users
     `,

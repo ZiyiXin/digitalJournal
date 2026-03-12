@@ -18,10 +18,12 @@ type SpaceRow = {
   owner_id: string;
   name: string;
   avatar_image: string;
+  avatar_thumbnail_image: string;
   avatar_x: number;
   avatar_y: number;
   avatar_scale: number;
   hero_image: string;
+  hero_thumbnail_image: string;
   visibility: SpaceVisibility;
   description: string;
   info_capsules: string;
@@ -38,6 +40,7 @@ type TimelineJoinRow = {
   entry_cover_y: number;
   image_id: string | null;
   image_url: string | null;
+  image_thumbnail_url: string | null;
   image_text: string | null;
 };
 
@@ -136,8 +139,10 @@ function mapSpace(row: SpaceRow, entries: TimelineEntry[], treeholeEntries: Tree
     id: row.id,
     name: row.name,
     avatarImage: row.avatar_image,
+    avatarThumbnailImage: row.avatar_thumbnail_image || row.avatar_image,
     avatarFocus: normalizeAvatarFocus(row.avatar_x, row.avatar_y, row.avatar_scale),
     heroImage: row.hero_image,
+    heroThumbnailImage: row.hero_thumbnail_image || row.hero_image,
     visibility: normalizeVisibility(row.visibility),
     description: row.description,
     infoCapsules: parseInfoCapsules(row.info_capsules),
@@ -161,6 +166,7 @@ function getTimelineBySpace(spaceId: string, ownerId: string): TimelineEntry[] {
         e.cover_y AS entry_cover_y,
         i.id AS image_id,
         i.image_url AS image_url,
+        i.thumbnail_url AS image_thumbnail_url,
         i.text AS image_text
       FROM timeline_entries e
       LEFT JOIN timeline_images i ON i.entry_id = e.id AND i.owner_id = e.owner_id
@@ -195,6 +201,7 @@ function getTimelineBySpace(spaceId: string, ownerId: string): TimelineEntry[] {
       const image: TimelineImage = {
         id: row.image_id,
         imageUrl: row.image_url,
+        thumbnailUrl: row.image_thumbnail_url || row.image_url,
       };
       if (row.image_text) {
         image.text = row.image_text;
@@ -231,7 +238,7 @@ export function listSpaces(ownerId: string): Space[] {
   const rows = db
     .prepare(
       `
-      SELECT id, owner_id, name, avatar_image, avatar_x, avatar_y, avatar_scale, hero_image, visibility, description, info_capsules
+      SELECT id, owner_id, name, avatar_image, avatar_thumbnail_image, avatar_x, avatar_y, avatar_scale, hero_image, hero_thumbnail_image, visibility, description, info_capsules
       FROM spaces
       WHERE owner_id = ?
       ORDER BY created_at ASC
@@ -246,7 +253,7 @@ export function getSpaceById(spaceId: string, ownerId: string): Space | null {
   const row = db
     .prepare(
       `
-      SELECT id, owner_id, name, avatar_image, avatar_x, avatar_y, avatar_scale, hero_image, visibility, description, info_capsules
+      SELECT id, owner_id, name, avatar_image, avatar_thumbnail_image, avatar_x, avatar_y, avatar_scale, hero_image, hero_thumbnail_image, visibility, description, info_capsules
       FROM spaces
       WHERE id = ? AND owner_id = ?
     `,
@@ -270,25 +277,29 @@ export function createSpace(ownerId: string, input: CreateSpaceInput): Space {
         owner_id,
         name,
         avatar_image,
+        avatar_thumbnail_image,
         avatar_x,
         avatar_y,
         avatar_scale,
         hero_image,
+        hero_thumbnail_image,
         visibility,
         description,
         info_capsules
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
   ).run(
     id,
     ownerId,
     input.name.trim(),
     input.avatarImage,
+    input.avatarThumbnailImage ?? input.avatarImage,
     input.avatarFocus?.x ?? 50,
     input.avatarFocus?.y ?? 50,
     input.avatarFocus?.scale ?? 1,
     input.heroImage ?? 'https://images.unsplash.com/photo-1518599904199-0ca897819ddb?auto=format&fit=crop&w=2000&q=80',
+    input.heroThumbnailImage ?? input.heroImage ?? 'https://images.unsplash.com/photo-1518599904199-0ca897819ddb?auto=format&fit=crop&w=2000&q=80',
     normalizeVisibility(input.visibility),
     input.description ?? '记录每一个闪光瞬间。',
     serializeInfoCapsules(input.infoCapsules),
@@ -300,7 +311,12 @@ export function createSpace(ownerId: string, input: CreateSpaceInput): Space {
 export function updateSpaceMeta(
   spaceId: string,
   ownerId: string,
-  input: Partial<Pick<Space, 'name' | 'avatarImage' | 'avatarFocus' | 'heroImage' | 'description' | 'infoCapsules' | 'visibility'>>,
+  input: Partial<
+    Pick<
+      Space,
+      'name' | 'avatarImage' | 'avatarThumbnailImage' | 'avatarFocus' | 'heroImage' | 'heroThumbnailImage' | 'description' | 'infoCapsules' | 'visibility'
+    >
+  >,
 ): Space | null {
   const current = getSpaceById(spaceId, ownerId);
   if (!current) return null;
@@ -311,10 +327,12 @@ export function updateSpaceMeta(
       SET
         name = ?,
         avatar_image = ?,
+        avatar_thumbnail_image = ?,
         avatar_x = ?,
         avatar_y = ?,
         avatar_scale = ?,
         hero_image = ?,
+        hero_thumbnail_image = ?,
         visibility = ?,
         description = ?,
         info_capsules = ?,
@@ -324,10 +342,12 @@ export function updateSpaceMeta(
   ).run(
     input.name ?? current.name,
     input.avatarImage ?? current.avatarImage,
+    input.avatarThumbnailImage ?? current.avatarThumbnailImage ?? current.avatarImage,
     input.avatarFocus?.x ?? current.avatarFocus.x,
     input.avatarFocus?.y ?? current.avatarFocus.y,
     input.avatarFocus?.scale ?? current.avatarFocus.scale,
     input.heroImage ?? current.heroImage,
+    input.heroThumbnailImage ?? current.heroThumbnailImage ?? current.heroImage,
     normalizeVisibility(input.visibility ?? current.visibility),
     input.description ?? current.description,
     serializeInfoCapsules(input.infoCapsules ?? current.infoCapsules),
@@ -360,22 +380,26 @@ const saveSpaceSnapshotTx = db.transaction((space: Space, ownerId: string) => {
         owner_id,
         name,
         avatar_image,
+        avatar_thumbnail_image,
         avatar_x,
         avatar_y,
         avatar_scale,
         hero_image,
+        hero_thumbnail_image,
         visibility,
         description,
         info_capsules
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         name = excluded.name,
         avatar_image = excluded.avatar_image,
+        avatar_thumbnail_image = excluded.avatar_thumbnail_image,
         avatar_x = excluded.avatar_x,
         avatar_y = excluded.avatar_y,
         avatar_scale = excluded.avatar_scale,
         hero_image = excluded.hero_image,
+        hero_thumbnail_image = excluded.hero_thumbnail_image,
         visibility = excluded.visibility,
         description = excluded.description,
         info_capsules = excluded.info_capsules,
@@ -387,10 +411,12 @@ const saveSpaceSnapshotTx = db.transaction((space: Space, ownerId: string) => {
     ownerId,
     space.name,
     space.avatarImage,
+    space.avatarThumbnailImage ?? space.avatarImage,
     space.avatarFocus?.x ?? 50,
     space.avatarFocus?.y ?? 50,
     space.avatarFocus?.scale ?? 1,
     space.heroImage,
+    space.heroThumbnailImage ?? space.heroImage,
     normalizeVisibility(space.visibility),
     space.description,
     serializeInfoCapsules(space.infoCapsules),
@@ -409,8 +435,8 @@ const saveSpaceSnapshotTx = db.transaction((space: Space, ownerId: string) => {
   );
   const insertImage = db.prepare(
     `
-      INSERT INTO timeline_images (id, owner_id, entry_id, image_url, text)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO timeline_images (id, owner_id, entry_id, image_url, thumbnail_url, text)
+      VALUES (?, ?, ?, ?, ?, ?)
     `,
   );
 
@@ -430,7 +456,14 @@ const saveSpaceSnapshotTx = db.transaction((space: Space, ownerId: string) => {
     );
 
     for (const image of entry.images ?? []) {
-      insertImage.run(image.id || randomUUID(), ownerId, entryId, image.imageUrl, image.text ?? '');
+      insertImage.run(
+        image.id || randomUUID(),
+        ownerId,
+        entryId,
+        image.imageUrl,
+        image.thumbnailUrl ?? image.imageUrl,
+        image.text ?? '',
+      );
     }
   }
 
