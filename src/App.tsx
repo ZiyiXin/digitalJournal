@@ -439,12 +439,27 @@ function SafeImage({
   decoding?: 'async' | 'auto' | 'sync',
   fetchPriority?: 'high' | 'low' | 'auto',
 }) {
+  const imgRef = React.useRef<HTMLImageElement | null>(null);
   const [error, setError] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
   React.useEffect(() => {
     setError(false);
     setLoaded(false);
+  }, [src]);
+
+  React.useEffect(() => {
+    const img = imgRef.current;
+    if (!img || !src) return;
+
+    // Cached images can already be complete when the component mounts.
+    if (img.complete) {
+      if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+        setLoaded(true);
+      } else {
+        setError(true);
+      }
+    }
   }, [src]);
 
   if (error || !src) {
@@ -461,9 +476,10 @@ function SafeImage({
   }
   return (
     <img 
+      ref={imgRef}
       src={src} 
       alt={alt} 
-      className={`${className} ${loaded ? '' : 'animate-pulse bg-pink-50'}`} 
+      className={`${className} ${loaded ? '' : 'bg-pink-50/40'}`} 
       onLoad={() => setLoaded(true)}
       onError={() => setError(true)} 
       referrerPolicy="no-referrer" 
