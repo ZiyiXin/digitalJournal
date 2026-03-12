@@ -26,7 +26,7 @@ PORT=3001
 LEGACY_OWNER_EMAIL=legacy@digital-journal.local
 LEGACY_OWNER_PASSWORD=ChangeMeNow123!
 LEGACY_OWNER_NICKNAME=Legacy Owner
-STORAGE_CAPACITY_GB=5
+STORAGE_CAPACITY_GB=20
 # 后台管理面板仅允许 legacy@digital-journal.local 访问
 ```
 

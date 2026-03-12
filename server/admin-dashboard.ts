@@ -105,7 +105,7 @@ export class QuotaExceededError extends Error {
   }
 }
 
-const DEFAULT_STORAGE_CAPACITY_GB = 5;
+const DEFAULT_STORAGE_CAPACITY_GB = 20;
 const UPLOAD_URL_REGEX = /^\/uploads\/([^/]+)\/([^?#]+)$/;
 
 function normalizeQuotaSettings(spaceLimit: number, storageLimitBytes: number): UserQuotaSettings {
