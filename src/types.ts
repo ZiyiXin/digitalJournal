@@ -71,6 +71,7 @@ export interface User {
   email: string;
   nickname: string;
   avatarImage?: string;
+  canAccessAdminDashboard?: boolean;
 }
 
 export interface AccountDashboardStats {

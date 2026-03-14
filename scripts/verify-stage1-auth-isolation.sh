@@ -6,7 +6,7 @@ API_URL="${API_URL:-http://localhost:3001}"
 DB_PATH="$ROOT_DIR/data/digital-journal.db"
 COOKIE_A="$(mktemp /tmp/dj_stage1_a_XXXXXX.cookie)"
 COOKIE_B="$(mktemp /tmp/dj_stage1_b_XXXXXX.cookie)"
-TMP_UPLOAD_FILE="$(mktemp /tmp/dj_stage1_upload_XXXXXX.txt)"
+TMP_UPLOAD_FILE="$(mktemp /tmp/dj_stage1_upload_XXXXXX.png)"
 SERVER_LOG="$(mktemp /tmp/dj_stage1_server_XXXXXX.log)"
 SERVER_PID=""
 
@@ -48,7 +48,7 @@ extract_json_value() {
 start_server() {
   (
     cd "$ROOT_DIR"
-    npm run start:server >"$SERVER_LOG" 2>&1
+    HOST=127.0.0.1 npm run dev:server >"$SERVER_LOG" 2>&1
   ) &
   SERVER_PID="$!"
 
@@ -64,7 +64,8 @@ start_server() {
   exit 1
 }
 
-echo "stage1-check" >"$TMP_UPLOAD_FILE"
+printf '%s' 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/P6nxsQAAAABJRU5ErkJggg==' \
+  | openssl base64 -d -A >"$TMP_UPLOAD_FILE"
 start_server
 
 echo "[STEP] register user A"
@@ -126,7 +127,7 @@ STATUS_ANON="$(curl -sS -o /tmp/dj_stage1_anon_spaces.json -w '%{http_code}' "$A
 assert_status "401" "$STATUS_ANON" "Anonymous /api/spaces should be unauthorized"
 
 echo "[STEP] upload path isolation check"
-UPLOAD_RESP="$(curl -sS -b "$COOKIE_A" -F "file=@$TMP_UPLOAD_FILE;type=text/plain" "$API_URL/api/uploads")"
+UPLOAD_RESP="$(curl -sS -b "$COOKIE_A" -F "file=@$TMP_UPLOAD_FILE;type=image/png" "$API_URL/api/uploads")"
 UPLOAD_URL="$(printf '%s' "$UPLOAD_RESP" | extract_json_value "url")"
 if [ -z "$UPLOAD_URL" ]; then
   echo "[FAIL] upload response missing url"

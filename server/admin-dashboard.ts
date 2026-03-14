@@ -10,6 +10,7 @@ import {
   normalizeSpaceLimit,
   normalizeStorageLimitBytes,
 } from './account-limits';
+import {parseUploadUrl} from './upload-storage';
 
 type UserRow = {
   id: string;
@@ -106,7 +107,6 @@ export class QuotaExceededError extends Error {
 }
 
 const DEFAULT_STORAGE_CAPACITY_GB = 20;
-const UPLOAD_URL_REGEX = /^\/uploads\/([^/]+)\/([^?#]+)$/;
 
 function normalizeQuotaSettings(spaceLimit: number, storageLimitBytes: number): UserQuotaSettings {
   return {
@@ -119,30 +119,6 @@ function getStorageCapacityBytes(): number {
   const configured = Number(process.env.STORAGE_CAPACITY_GB ?? DEFAULT_STORAGE_CAPACITY_GB);
   const storageGb = Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_STORAGE_CAPACITY_GB;
   return Math.round(storageGb * 1024 * 1024 * 1024);
-}
-
-function parseUploadUrl(url: string): {userId: string; fileKey: string} | null {
-  const normalized = url.trim();
-  if (!normalized) return null;
-
-  const matched = UPLOAD_URL_REGEX.exec(normalized);
-  if (!matched) return null;
-
-  let userId = '';
-  let filePath = '';
-  try {
-    userId = decodeURIComponent(matched[1] ?? '').trim();
-    filePath = decodeURIComponent((matched[2] ?? '').trim());
-  } catch {
-    return null;
-  }
-
-  if (!userId || !filePath || filePath.includes('\0')) return null;
-
-  return {
-    userId,
-    fileKey: path.posix.join(userId, filePath),
-  };
 }
 
 function scanUploadDirectory(): {
@@ -338,6 +314,16 @@ export function assertStorageQuotaAvailable(userId: string, additionalBytes = 0)
   const projectedBytes = stats.storageBytes + Math.max(additionalBytes, 0);
   if (projectedBytes > stats.storageLimitBytes) {
     throw new QuotaExceededError(`当前账户已达到 ${formatStorageLimit(stats.storageLimitBytes)} 存储上限`);
+  }
+}
+
+export function assertGlobalStorageCapacityAvailable(additionalBytes = 0): void {
+  const capacityBytes = getStorageCapacityBytes();
+  const storageScan = scanUploadDirectory();
+  const projectedBytes = storageScan.usedBytes + Math.max(additionalBytes, 0);
+
+  if (projectedBytes > capacityBytes) {
+    throw new QuotaExceededError(`服务器存储已达到 ${formatStorageLimit(capacityBytes)} 总容量上限`);
   }
 }
 

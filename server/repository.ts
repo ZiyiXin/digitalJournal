@@ -1,6 +1,7 @@
 import {randomUUID} from 'node:crypto';
 import {db} from './db';
 import {canEditSpace, canViewSpace} from './authz';
+import {collectUploadUrlsFromSpace, deleteUnreferencedUploadUrls} from './upload-storage';
 import type {
   CreateSpaceInput,
   InfoCapsule,
@@ -234,6 +235,25 @@ function getTreeholeBySpace(spaceId: string, ownerId: string): TreeholeEntry[] {
   }));
 }
 
+export function getSpaceSnapshotTarget(
+  spaceId: string,
+  ownerId: string,
+): 'create' | 'update' | 'forbidden' {
+  const row = db
+    .prepare('SELECT owner_id, visibility FROM spaces WHERE id = ? LIMIT 1')
+    .get(spaceId) as {owner_id: string; visibility: SpaceVisibility} | undefined;
+
+  if (!row) return 'create';
+
+  return canEditSpace({
+    currentUserId: ownerId,
+    ownerId: row.owner_id,
+    visibility: row.visibility,
+  })
+    ? 'update'
+    : 'forbidden';
+}
+
 export function listSpaces(ownerId: string): Space[] {
   const rows = db
     .prepare(
@@ -320,6 +340,7 @@ export function updateSpaceMeta(
 ): Space | null {
   const current = getSpaceById(spaceId, ownerId);
   if (!current) return null;
+  const previousUploadUrls = collectUploadUrlsFromSpace(current);
 
   db.prepare(
     `
@@ -355,7 +376,9 @@ export function updateSpaceMeta(
     ownerId,
   );
 
-  return getSpaceById(spaceId, ownerId);
+  const updated = getSpaceById(spaceId, ownerId);
+  deleteUnreferencedUploadUrls(previousUploadUrls);
+  return updated;
 }
 
 const saveSpaceSnapshotTx = db.transaction((space: Space, ownerId: string) => {
@@ -488,15 +511,25 @@ const saveSpaceSnapshotTx = db.transaction((space: Space, ownerId: string) => {
 });
 
 export function saveSpaceSnapshot(space: Space, ownerId: string): Space {
+  const current = getSpaceById(space.id, ownerId);
+  const previousUploadUrls = collectUploadUrlsFromSpace(current);
   saveSpaceSnapshotTx(space, ownerId);
   const saved = getSpaceById(space.id, ownerId);
   if (!saved) {
     throw new Error('Space not found');
   }
+  deleteUnreferencedUploadUrls(previousUploadUrls);
   return saved;
 }
 
 export function deleteSpace(spaceId: string, ownerId: string): boolean {
+  const current = getSpaceById(spaceId, ownerId);
+  if (!current) return false;
+
+  const previousUploadUrls = collectUploadUrlsFromSpace(current);
   const result = db.prepare('DELETE FROM spaces WHERE id = ? AND owner_id = ?').run(spaceId, ownerId);
+  if (result.changes > 0) {
+    deleteUnreferencedUploadUrls(previousUploadUrls);
+  }
   return result.changes > 0;
 }

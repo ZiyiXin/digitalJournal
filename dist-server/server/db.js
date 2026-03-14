@@ -1,23 +1,18 @@
 import Database from 'better-sqlite3';
 import fs from 'node:fs';
 import path from 'node:path';
-import {randomUUID} from 'node:crypto';
-import {hashPassword} from './auth/password';
-import {DEFAULT_USER_SPACE_LIMIT, DEFAULT_USER_STORAGE_LIMIT_BYTES} from './account-limits';
-
+import { randomUUID } from 'node:crypto';
+import { hashPassword } from './auth/password';
+import { DEFAULT_USER_SPACE_LIMIT, DEFAULT_USER_STORAGE_LIMIT_BYTES } from './account-limits';
 const DATA_DIR = path.resolve(process.env.DATA_DIR ?? path.join(process.cwd(), 'data'));
 export const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
 const DB_PATH = path.join(DATA_DIR, 'digital-journal.db');
 const DEFAULT_INFO_CAPSULES_JSON = '[{"id":"default-date","type":"date","label":"日期","value":"1997-10-14"},{"id":"default-zodiac","type":"zodiac","label":"星座","value":"天秤座"},{"id":"default-location","type":"location","label":"地点","value":"重庆市"}]';
-
-fs.mkdirSync(DATA_DIR, {recursive: true});
-fs.mkdirSync(UPLOADS_DIR, {recursive: true});
-
+fs.mkdirSync(DATA_DIR, { recursive: true });
+fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 export const db = new Database(DB_PATH);
-
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
-
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
@@ -99,18 +94,12 @@ db.exec(`
     FOREIGN KEY (space_id) REFERENCES spaces(id) ON DELETE CASCADE
   );
 `);
-
-type TableInfoRow = {
-  name: string;
-};
-
-function ensureColumn(table: string, column: string, definition: string) {
-  const rows = db.prepare(`PRAGMA table_info(${table})`).all() as TableInfoRow[];
-  if (!rows.some((row) => row.name === column)) {
-    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
-  }
+function ensureColumn(table, column, definition) {
+    const rows = db.prepare(`PRAGMA table_info(${table})`).all();
+    if (!rows.some((row) => row.name === column)) {
+        db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    }
 }
-
 ensureColumn('timeline_entries', 'cover_x', 'REAL NOT NULL DEFAULT 50');
 ensureColumn('timeline_entries', 'cover_y', 'REAL NOT NULL DEFAULT 42');
 ensureColumn('users', 'space_limit', `INTEGER NOT NULL DEFAULT ${DEFAULT_USER_SPACE_LIMIT}`);
@@ -127,7 +116,6 @@ ensureColumn('timeline_entries', 'owner_id', "TEXT NOT NULL DEFAULT ''");
 ensureColumn('timeline_images', 'owner_id', "TEXT NOT NULL DEFAULT ''");
 ensureColumn('timeline_images', 'thumbnail_url', "TEXT NOT NULL DEFAULT ''");
 ensureColumn('treehole_entries', 'owner_id', "TEXT NOT NULL DEFAULT ''");
-
 db.exec(`
   UPDATE spaces
   SET avatar_thumbnail_image = avatar_image
@@ -141,7 +129,6 @@ db.exec(`
   SET thumbnail_url = image_url
   WHERE image_url <> '' AND (thumbnail_url IS NULL OR thumbnail_url = '');
 `);
-
 db.exec(`
   CREATE INDEX IF NOT EXISTS idx_spaces_owner_created
     ON spaces(owner_id, created_at);
@@ -154,156 +141,121 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_sessions_user_exp
     ON user_sessions(user_id, expires_at);
 `);
-
-function parseLegacyUploadUrl(url: string, userId: string): {filename: string; url: string} | null {
-  const matched = /^\/uploads\/([^/]+)$/.exec(url);
-  if (!matched) return null;
-  const filename = matched[1];
-  if (!filename) return null;
-  return {
-    filename,
-    url: `/uploads/${userId}/${filename}`,
-  };
+function parseLegacyUploadUrl(url, userId) {
+    const matched = /^\/uploads\/([^/]+)$/.exec(url);
+    if (!matched)
+        return null;
+    const filename = matched[1];
+    if (!filename)
+        return null;
+    return {
+        filename,
+        url: `/uploads/${userId}/${filename}`,
+    };
 }
-
-function moveUploadIntoUserDir(userId: string, filename: string): boolean {
-  const userUploadsDir = path.join(UPLOADS_DIR, userId);
-  fs.mkdirSync(userUploadsDir, {recursive: true});
-
-  const sourcePath = path.join(UPLOADS_DIR, filename);
-  const targetPath = path.join(userUploadsDir, filename);
-
-  if (fs.existsSync(targetPath)) return true;
-  if (!fs.existsSync(sourcePath)) return false;
-
-  fs.renameSync(sourcePath, targetPath);
-  return true;
+function moveUploadIntoUserDir(userId, filename) {
+    const userUploadsDir = path.join(UPLOADS_DIR, userId);
+    fs.mkdirSync(userUploadsDir, { recursive: true });
+    const sourcePath = path.join(UPLOADS_DIR, filename);
+    const targetPath = path.join(userUploadsDir, filename);
+    if (fs.existsSync(targetPath))
+        return true;
+    if (!fs.existsSync(sourcePath))
+        return false;
+    fs.renameSync(sourcePath, targetPath);
+    return true;
 }
-
-function migrateUploadUrlsForLegacyUser(legacyUserId: string) {
-  const spaceImageRows = db
-    .prepare(
-      `
+function migrateUploadUrlsForLegacyUser(legacyUserId) {
+    const spaceImageRows = db
+        .prepare(`
       SELECT id, avatar_image, avatar_thumbnail_image, hero_image, hero_thumbnail_image
       FROM spaces
       WHERE owner_id = ?
-    `,
-    )
-    .all(legacyUserId) as Array<{
-      id: string;
-      avatar_image: string;
-      avatar_thumbnail_image: string;
-      hero_image: string;
-      hero_thumbnail_image: string;
-    }>;
-
-  const updateSpaceAvatar = db.prepare('UPDATE spaces SET avatar_image = ? WHERE id = ?');
-  const updateSpaceAvatarThumbnail = db.prepare('UPDATE spaces SET avatar_thumbnail_image = ? WHERE id = ?');
-  const updateSpaceHero = db.prepare('UPDATE spaces SET hero_image = ? WHERE id = ?');
-  const updateSpaceHeroThumbnail = db.prepare('UPDATE spaces SET hero_thumbnail_image = ? WHERE id = ?');
-
-  for (const row of spaceImageRows) {
-    const avatar = parseLegacyUploadUrl(row.avatar_image, legacyUserId);
-    if (avatar && moveUploadIntoUserDir(legacyUserId, avatar.filename)) {
-      updateSpaceAvatar.run(avatar.url, row.id);
+    `)
+        .all(legacyUserId);
+    const updateSpaceAvatar = db.prepare('UPDATE spaces SET avatar_image = ? WHERE id = ?');
+    const updateSpaceAvatarThumbnail = db.prepare('UPDATE spaces SET avatar_thumbnail_image = ? WHERE id = ?');
+    const updateSpaceHero = db.prepare('UPDATE spaces SET hero_image = ? WHERE id = ?');
+    const updateSpaceHeroThumbnail = db.prepare('UPDATE spaces SET hero_thumbnail_image = ? WHERE id = ?');
+    for (const row of spaceImageRows) {
+        const avatar = parseLegacyUploadUrl(row.avatar_image, legacyUserId);
+        if (avatar && moveUploadIntoUserDir(legacyUserId, avatar.filename)) {
+            updateSpaceAvatar.run(avatar.url, row.id);
+        }
+        const avatarThumbnail = parseLegacyUploadUrl(row.avatar_thumbnail_image, legacyUserId);
+        if (avatarThumbnail && moveUploadIntoUserDir(legacyUserId, avatarThumbnail.filename)) {
+            updateSpaceAvatarThumbnail.run(avatarThumbnail.url, row.id);
+        }
+        const hero = parseLegacyUploadUrl(row.hero_image, legacyUserId);
+        if (hero && moveUploadIntoUserDir(legacyUserId, hero.filename)) {
+            updateSpaceHero.run(hero.url, row.id);
+        }
+        const heroThumbnail = parseLegacyUploadUrl(row.hero_thumbnail_image, legacyUserId);
+        if (heroThumbnail && moveUploadIntoUserDir(legacyUserId, heroThumbnail.filename)) {
+            updateSpaceHeroThumbnail.run(heroThumbnail.url, row.id);
+        }
     }
-
-    const avatarThumbnail = parseLegacyUploadUrl(row.avatar_thumbnail_image, legacyUserId);
-    if (avatarThumbnail && moveUploadIntoUserDir(legacyUserId, avatarThumbnail.filename)) {
-      updateSpaceAvatarThumbnail.run(avatarThumbnail.url, row.id);
-    }
-
-    const hero = parseLegacyUploadUrl(row.hero_image, legacyUserId);
-    if (hero && moveUploadIntoUserDir(legacyUserId, hero.filename)) {
-      updateSpaceHero.run(hero.url, row.id);
-    }
-
-    const heroThumbnail = parseLegacyUploadUrl(row.hero_thumbnail_image, legacyUserId);
-    if (heroThumbnail && moveUploadIntoUserDir(legacyUserId, heroThumbnail.filename)) {
-      updateSpaceHeroThumbnail.run(heroThumbnail.url, row.id);
-    }
-  }
-
-  const timelineImageRows = db
-    .prepare(
-      `
+    const timelineImageRows = db
+        .prepare(`
       SELECT id, image_url, thumbnail_url
       FROM timeline_images
       WHERE owner_id = ?
-    `,
-    )
-    .all(legacyUserId) as Array<{id: string; image_url: string; thumbnail_url: string}>;
-
-  const updateTimelineImage = db.prepare('UPDATE timeline_images SET image_url = ? WHERE id = ?');
-  const updateTimelineThumbnail = db.prepare('UPDATE timeline_images SET thumbnail_url = ? WHERE id = ?');
-  for (const row of timelineImageRows) {
-    const parsed = parseLegacyUploadUrl(row.image_url, legacyUserId);
-    if (!parsed) continue;
-    if (!moveUploadIntoUserDir(legacyUserId, parsed.filename)) continue;
-    updateTimelineImage.run(parsed.url, row.id);
-
-    const thumbnail = parseLegacyUploadUrl(row.thumbnail_url, legacyUserId);
-    if (!thumbnail) continue;
-    if (!moveUploadIntoUserDir(legacyUserId, thumbnail.filename)) continue;
-    updateTimelineThumbnail.run(thumbnail.url, row.id);
-  }
+    `)
+        .all(legacyUserId);
+    const updateTimelineImage = db.prepare('UPDATE timeline_images SET image_url = ? WHERE id = ?');
+    const updateTimelineThumbnail = db.prepare('UPDATE timeline_images SET thumbnail_url = ? WHERE id = ?');
+    for (const row of timelineImageRows) {
+        const parsed = parseLegacyUploadUrl(row.image_url, legacyUserId);
+        if (!parsed)
+            continue;
+        if (!moveUploadIntoUserDir(legacyUserId, parsed.filename))
+            continue;
+        updateTimelineImage.run(parsed.url, row.id);
+        const thumbnail = parseLegacyUploadUrl(row.thumbnail_url, legacyUserId);
+        if (!thumbnail)
+            continue;
+        if (!moveUploadIntoUserDir(legacyUserId, thumbnail.filename))
+            continue;
+        updateTimelineThumbnail.run(thumbnail.url, row.id);
+    }
 }
-
-function ensureLegacyUserForBackfill(): string | null {
-  const needsBackfillRow = db
-    .prepare(
-      `
+function ensureLegacyUserForBackfill() {
+    const needsBackfillRow = db
+        .prepare(`
       SELECT
         (SELECT COUNT(*) FROM spaces WHERE owner_id IS NULL OR owner_id = '') AS spaces_count,
         (SELECT COUNT(*) FROM timeline_entries WHERE owner_id IS NULL OR owner_id = '') AS timeline_count,
         (SELECT COUNT(*) FROM timeline_images WHERE owner_id IS NULL OR owner_id = '') AS image_count,
         (SELECT COUNT(*) FROM treehole_entries WHERE owner_id IS NULL OR owner_id = '') AS treehole_count
-    `,
-    )
-    .get() as {
-      spaces_count: number;
-      timeline_count: number;
-      image_count: number;
-      treehole_count: number;
-    };
-
-  const needsBackfill =
-    needsBackfillRow.spaces_count > 0 ||
-    needsBackfillRow.timeline_count > 0 ||
-    needsBackfillRow.image_count > 0 ||
-    needsBackfillRow.treehole_count > 0;
-
-  if (!needsBackfill) return null;
-
-  const email = (process.env.LEGACY_OWNER_EMAIL ?? 'legacy@digital-journal.local').trim().toLowerCase();
-  const password = process.env.LEGACY_OWNER_PASSWORD ?? 'ChangeMeNow123!';
-  const nickname = (process.env.LEGACY_OWNER_NICKNAME ?? 'Legacy Owner').trim() || 'Legacy Owner';
-
-  const existing = db.prepare('SELECT id FROM users WHERE email = ? LIMIT 1').get(email) as {id: string} | undefined;
-  if (existing) return existing.id;
-
-  const userId = randomUUID();
-  const passwordHash = hashPassword(password);
-  db.prepare(
-    `
+    `)
+        .get();
+    const needsBackfill = needsBackfillRow.spaces_count > 0 ||
+        needsBackfillRow.timeline_count > 0 ||
+        needsBackfillRow.image_count > 0 ||
+        needsBackfillRow.treehole_count > 0;
+    if (!needsBackfill)
+        return null;
+    const email = (process.env.LEGACY_OWNER_EMAIL ?? 'legacy@digital-journal.local').trim().toLowerCase();
+    const password = process.env.LEGACY_OWNER_PASSWORD ?? 'ChangeMeNow123!';
+    const nickname = (process.env.LEGACY_OWNER_NICKNAME ?? 'Legacy Owner').trim() || 'Legacy Owner';
+    const existing = db.prepare('SELECT id FROM users WHERE email = ? LIMIT 1').get(email);
+    if (existing)
+        return existing.id;
+    const userId = randomUUID();
+    const passwordHash = hashPassword(password);
+    db.prepare(`
       INSERT INTO users (id, email, password_hash, nickname, avatar_image)
       VALUES (?, ?, ?, ?, '')
-    `,
-  ).run(userId, email, passwordHash, nickname);
-  return userId;
+    `).run(userId, email, passwordHash, nickname);
+    return userId;
 }
-
-const backfillOwnershipTx = db.transaction((legacyUserId: string) => {
-  db.prepare(
-    `
+const backfillOwnershipTx = db.transaction((legacyUserId) => {
+    db.prepare(`
       UPDATE spaces
       SET owner_id = ?, visibility = 'private'
       WHERE owner_id IS NULL OR owner_id = ''
-    `,
-  ).run(legacyUserId);
-
-  db.prepare(
-    `
+    `).run(legacyUserId);
+    db.prepare(`
       UPDATE timeline_entries
       SET owner_id = (
         SELECT s.owner_id
@@ -311,11 +263,8 @@ const backfillOwnershipTx = db.transaction((legacyUserId: string) => {
         WHERE s.id = timeline_entries.space_id
       )
       WHERE owner_id IS NULL OR owner_id = ''
-    `,
-  ).run();
-
-  db.prepare(
-    `
+    `).run();
+    db.prepare(`
       UPDATE timeline_images
       SET owner_id = (
         SELECT e.owner_id
@@ -323,11 +272,8 @@ const backfillOwnershipTx = db.transaction((legacyUserId: string) => {
         WHERE e.id = timeline_images.entry_id
       )
       WHERE owner_id IS NULL OR owner_id = ''
-    `,
-  ).run();
-
-  db.prepare(
-    `
+    `).run();
+    db.prepare(`
       UPDATE treehole_entries
       SET owner_id = (
         SELECT s.owner_id
@@ -335,20 +281,16 @@ const backfillOwnershipTx = db.transaction((legacyUserId: string) => {
         WHERE s.id = treehole_entries.space_id
       )
       WHERE owner_id IS NULL OR owner_id = ''
-    `,
-  ).run();
-
-  db.prepare(`UPDATE spaces SET visibility = 'private' WHERE visibility != 'private' OR visibility IS NULL`).run();
+    `).run();
+    db.prepare(`UPDATE spaces SET visibility = 'private' WHERE visibility != 'private' OR visibility IS NULL`).run();
 });
-
 const legacyUserId = ensureLegacyUserForBackfill();
 if (legacyUserId) {
-  backfillOwnershipTx(legacyUserId);
-  migrateUploadUrlsForLegacyUser(legacyUserId);
+    backfillOwnershipTx(legacyUserId);
+    migrateUploadUrlsForLegacyUser(legacyUserId);
 }
-
-export function getUserUploadsDir(userId: string): string {
-  const userUploadsDir = path.join(UPLOADS_DIR, userId);
-  fs.mkdirSync(userUploadsDir, {recursive: true});
-  return userUploadsDir;
+export function getUserUploadsDir(userId) {
+    const userUploadsDir = path.join(UPLOADS_DIR, userId);
+    fs.mkdirSync(userUploadsDir, { recursive: true });
+    return userUploadsDir;
 }

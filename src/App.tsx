@@ -62,12 +62,6 @@ import type {
   User,
 } from './types';
 
-const LEGACY_ADMIN_EMAIL = 'legacy@digital-journal.local';
-
-function canAccessAdminDashboard(email: string): boolean {
-  return email.trim().toLowerCase() === LEGACY_ADMIN_EMAIL;
-}
-
 // --- Themes ---
 export type ThemeName = 'default' | 'anime' | 'scifi' | 'retro' | 'fantasy' | 'cinema' | 'lightcone';
 
@@ -5078,7 +5072,7 @@ export default function App() {
 
   const currentTheme = THEMES[themeName];
   const currentSpace = currentSpaceId ? spaces.find((space) => space.id === currentSpaceId) ?? null : null;
-  const canOpenAdminPanel = currentUser ? canAccessAdminDashboard(currentUser.email) : false;
+  const canOpenAdminPanel = Boolean(currentUser?.canAccessAdminDashboard);
   const isPortalView = currentSpaceId === null || !currentSpace;
 
   if (isBootstrapping) {
