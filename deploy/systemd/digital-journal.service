@@ -1,0 +1,19 @@
+[Unit]
+Description=Digital Journal API
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/srv/digital-journal/current
+Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
+Environment=DATA_DIR=/srv/digital-journal/shared/data
+EnvironmentFile=/srv/digital-journal/shared/.env
+ExecStart=/usr/bin/npm run start
+Restart=always
+RestartSec=5
+User=www-data
+Group=www-data
+
+[Install]
+WantedBy=multi-user.target

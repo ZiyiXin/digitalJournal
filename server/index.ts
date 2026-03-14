@@ -2,11 +2,14 @@ import 'dotenv/config';
 import fs from 'node:fs';
 import path from 'node:path';
 import {randomUUID} from 'node:crypto';
-import {execFileSync} from 'node:child_process';
 import express from 'express';
+import rateLimit from 'express-rate-limit';
+import helmet from 'helmet';
 import multer from 'multer';
+import sharp from 'sharp';
 import {
   assertCanCreateSpace,
+  assertGlobalStorageCapacityAvailable,
   assertStorageQuotaAvailable,
   getAccountDashboardStats,
   getAdminDashboardStats,
@@ -17,6 +20,7 @@ import {
   createSpace,
   deleteSpace,
   getSpaceById,
+  getSpaceSnapshotTarget,
   listSpaces,
   saveSpaceSnapshot,
   updateSpaceMeta,
@@ -33,13 +37,33 @@ import {
   normalizeEmail,
   updateUserPassword,
 } from './user-repository';
-import type {CreateSpaceInput, Space} from './types';
+import {pruneStaleOrphanedUploads} from './upload-storage';
+import type {CreateSpaceInput, Space, User} from './types';
 
 const app = express();
 const port = Number(process.env.PORT ?? 3001);
+const host = process.env.HOST ?? '0.0.0.0';
 const SESSION_MAX_AGE_MS = SESSION_TTL_DAYS * 24 * 60 * 60 * 1000;
 const THUMBNAIL_MAX_DIMENSION = 960;
-const THUMBNAIL_QUALITY = '80';
+const THUMBNAIL_QUALITY = 80;
+const CLIENT_DIST_DIR = path.resolve(process.cwd(), 'dist');
+const CLIENT_INDEX_PATH = path.join(CLIENT_DIST_DIR, 'index.html');
+
+const authRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {error: '认证请求过于频繁，请稍后再试'},
+});
+
+const uploadRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {error: '上传请求过于频繁，请稍后再试'},
+});
 
 const uploadsStorage = multer.diskStorage({
   destination: (req, _file, cb) => {
@@ -82,25 +106,21 @@ function getThumbnailFilename(filename: string): string {
   return `${baseName}-thumb.jpg`;
 }
 
-function createThumbnail(sourcePath: string, outputPath: string) {
+async function createThumbnail(sourcePath: string, outputPath: string) {
   try {
-    execFileSync(
-      'sips',
-      [
-        '-s',
-        'format',
-        'jpeg',
-        '-s',
-        'formatOptions',
-        THUMBNAIL_QUALITY,
-        '-Z',
-        String(THUMBNAIL_MAX_DIMENSION),
-        sourcePath,
-        '--out',
-        outputPath,
-      ],
-      {stdio: 'ignore'},
-    );
+    await sharp(sourcePath)
+      .rotate()
+      .resize({
+        width: THUMBNAIL_MAX_DIMENSION,
+        height: THUMBNAIL_MAX_DIMENSION,
+        fit: 'inside',
+        withoutEnlargement: true,
+      })
+      .jpeg({
+        quality: THUMBNAIL_QUALITY,
+        mozjpeg: true,
+      })
+      .toFile(outputPath);
   } catch {
     throw new Error('Failed to generate image thumbnail');
   }
@@ -139,9 +159,6 @@ function clearSessionCookie(res: express.Response) {
 }
 
 function extractClientIp(req: express.Request): string {
-  const forwarded = req.headers['x-forwarded-for'];
-  if (Array.isArray(forwarded)) return forwarded[0] ?? req.ip;
-  if (typeof forwarded === 'string') return forwarded.split(',')[0]?.trim() || req.ip;
   return req.ip;
 }
 
@@ -149,19 +166,33 @@ function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-const LEGACY_ADMIN_EMAIL = 'legacy@digital-journal.local';
+const LEGACY_ADMIN_EMAIL = normalizeEmail(process.env.LEGACY_OWNER_EMAIL ?? 'legacy@digital-journal.local');
 
 function canAccessAdminDashboard(email: string): boolean {
   return normalizeEmail(email) === LEGACY_ADMIN_EMAIL;
 }
 
+function toResponseUser(user: User): User {
+  return {
+    ...user,
+    canAccessAdminDashboard: canAccessAdminDashboard(user.email),
+  };
+}
+
+app.set('trust proxy', 1);
+app.disable('x-powered-by');
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+  }),
+);
 app.use(express.json({limit: '10mb'}));
 
 app.get('/api/health', (_req, res) => {
   res.json({ok: true, timestamp: new Date().toISOString()});
 });
 
-app.post('/api/auth/register', (req, res) => {
+app.post('/api/auth/register', authRateLimiter, (req, res) => {
   const payload = req.body as Partial<{email: string; password: string; nickname: string}>;
   const email = normalizeEmail(payload.email ?? '');
   const password = payload.password?.trim() ?? '';
@@ -206,10 +237,10 @@ app.post('/api/auth/register', (req, res) => {
   });
 
   setSessionCookie(res, session.token);
-  res.status(201).json(user);
+  res.status(201).json(toResponseUser(user));
 });
 
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', authRateLimiter, (req, res) => {
   const payload = req.body as Partial<{email: string; password: string}>;
   const email = normalizeEmail(payload.email ?? '');
   const password = payload.password?.trim() ?? '';
@@ -238,7 +269,7 @@ app.post('/api/auth/login', (req, res) => {
     return;
   }
 
-  res.json(user);
+  res.json(toResponseUser(user));
 });
 
 app.post('/api/auth/logout', (req, res) => {
@@ -248,7 +279,7 @@ app.post('/api/auth/logout', (req, res) => {
   res.status(204).send();
 });
 
-app.post('/api/auth/change-password', requireAuth, (req, res) => {
+app.post('/api/auth/change-password', authRateLimiter, requireAuth, (req, res) => {
   const payload = req.body as Partial<{currentPassword: string; newPassword: string}>;
   const currentPassword = payload.currentPassword?.trim() ?? '';
   const newPassword = payload.newPassword?.trim() ?? '';
@@ -306,7 +337,7 @@ app.get('/api/me', requireAuth, (req, res) => {
     return;
   }
 
-  res.json(user);
+  res.json(toResponseUser(user));
 });
 
 app.get('/api/admin/dashboard', requireAuth, (req, res) => {
@@ -357,7 +388,7 @@ app.get('/uploads/:userId/:filename', requireAuth, (req, res) => {
   res.sendFile(filePath);
 });
 
-app.post('/api/uploads', requireAuth, upload.single('file'), (req, res) => {
+app.post('/api/uploads', uploadRateLimiter, requireAuth, upload.single('file'), async (req, res, next) => {
   if (!req.file) {
     res.status(400).json({error: 'No file uploaded'});
     return;
@@ -369,11 +400,13 @@ app.post('/api/uploads', requireAuth, upload.single('file'), (req, res) => {
   const thumbnailPath = path.join(path.dirname(originalPath), thumbnailFilename);
 
   try {
-    createThumbnail(originalPath, thumbnailPath);
+    await createThumbnail(originalPath, thumbnailPath);
     assertStorageQuotaAvailable(userId);
+    assertGlobalStorageCapacityAvailable();
   } catch (error) {
     cleanupFiles([originalPath, thumbnailPath]);
-    throw error;
+    next(error);
+    return;
   }
 
   res.status(201).json({
@@ -454,6 +487,15 @@ app.put('/api/spaces/:id/full', requireAuth, (req, res) => {
     return;
   }
 
+  const snapshotTarget = getSpaceSnapshotTarget(req.params.id, req.user!.id);
+  if (snapshotTarget === 'forbidden') {
+    res.status(404).json({error: 'Space not found'});
+    return;
+  }
+  if (snapshotTarget === 'create') {
+    assertCanCreateSpace(req.user!.id);
+  }
+
   try {
     const saved = saveSpaceSnapshot(
       {
@@ -481,7 +523,37 @@ app.delete('/api/spaces/:id', requireAuth, (req, res) => {
   res.status(204).send();
 });
 
+app.use('/api', (_req, res) => {
+  res.status(404).json({error: 'Not found'});
+});
+
+if (fs.existsSync(CLIENT_INDEX_PATH)) {
+  app.use(express.static(CLIENT_DIST_DIR, {index: false}));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) {
+      next();
+      return;
+    }
+
+    res.sendFile(CLIENT_INDEX_PATH);
+  });
+}
+
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      res.status(413).json({error: 'Image upload exceeds the 8 MB limit'});
+      return;
+    }
+    res.status(400).json({error: err.message || 'Invalid upload payload'});
+    return;
+  }
+
+  if (err.message === 'Only image uploads are supported' || err.message === 'Failed to generate image thumbnail') {
+    res.status(400).json({error: err.message});
+    return;
+  }
+
   if (err instanceof QuotaExceededError) {
     res.status(409).json({error: err.message});
     return;
@@ -494,8 +566,13 @@ if (!fs.existsSync(UPLOADS_DIR)) {
 }
 
 revokeExpiredSessions();
+const removedOrphanUploads = pruneStaleOrphanedUploads();
 
-app.listen(port, () => {
+app.listen(port, host, () => {
   // eslint-disable-next-line no-console
-  console.log(`API server running on http://localhost:${port}`);
+  console.log(`API server running on http://${host}:${port}`);
+  if (removedOrphanUploads > 0) {
+    // eslint-disable-next-line no-console
+    console.log(`Pruned ${removedOrphanUploads} stale orphan upload(s) on startup`);
+  }
 });

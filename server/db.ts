@@ -5,7 +5,7 @@ import {randomUUID} from 'node:crypto';
 import {hashPassword} from './auth/password';
 import {DEFAULT_USER_SPACE_LIMIT, DEFAULT_USER_STORAGE_LIMIT_BYTES} from './account-limits';
 
-const DATA_DIR = path.resolve(process.cwd(), 'data');
+const DATA_DIR = path.resolve(process.env.DATA_DIR ?? path.join(process.cwd(), 'data'));
 export const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
 const DB_PATH = path.join(DATA_DIR, 'digital-journal.db');
 const DEFAULT_INFO_CAPSULES_JSON = '[{"id":"default-date","type":"date","label":"日期","value":"1997-10-14"},{"id":"default-zodiac","type":"zodiac","label":"星座","value":"天秤座"},{"id":"default-location","type":"location","label":"地点","value":"重庆市"}]';
@@ -184,15 +184,23 @@ function migrateUploadUrlsForLegacyUser(legacyUserId: string) {
   const spaceImageRows = db
     .prepare(
       `
-      SELECT id, avatar_image, hero_image
+      SELECT id, avatar_image, avatar_thumbnail_image, hero_image, hero_thumbnail_image
       FROM spaces
       WHERE owner_id = ?
     `,
     )
-    .all(legacyUserId) as Array<{id: string; avatar_image: string; hero_image: string}>;
+    .all(legacyUserId) as Array<{
+      id: string;
+      avatar_image: string;
+      avatar_thumbnail_image: string;
+      hero_image: string;
+      hero_thumbnail_image: string;
+    }>;
 
   const updateSpaceAvatar = db.prepare('UPDATE spaces SET avatar_image = ? WHERE id = ?');
+  const updateSpaceAvatarThumbnail = db.prepare('UPDATE spaces SET avatar_thumbnail_image = ? WHERE id = ?');
   const updateSpaceHero = db.prepare('UPDATE spaces SET hero_image = ? WHERE id = ?');
+  const updateSpaceHeroThumbnail = db.prepare('UPDATE spaces SET hero_thumbnail_image = ? WHERE id = ?');
 
   for (const row of spaceImageRows) {
     const avatar = parseLegacyUploadUrl(row.avatar_image, legacyUserId);
@@ -200,28 +208,44 @@ function migrateUploadUrlsForLegacyUser(legacyUserId: string) {
       updateSpaceAvatar.run(avatar.url, row.id);
     }
 
+    const avatarThumbnail = parseLegacyUploadUrl(row.avatar_thumbnail_image, legacyUserId);
+    if (avatarThumbnail && moveUploadIntoUserDir(legacyUserId, avatarThumbnail.filename)) {
+      updateSpaceAvatarThumbnail.run(avatarThumbnail.url, row.id);
+    }
+
     const hero = parseLegacyUploadUrl(row.hero_image, legacyUserId);
     if (hero && moveUploadIntoUserDir(legacyUserId, hero.filename)) {
       updateSpaceHero.run(hero.url, row.id);
+    }
+
+    const heroThumbnail = parseLegacyUploadUrl(row.hero_thumbnail_image, legacyUserId);
+    if (heroThumbnail && moveUploadIntoUserDir(legacyUserId, heroThumbnail.filename)) {
+      updateSpaceHeroThumbnail.run(heroThumbnail.url, row.id);
     }
   }
 
   const timelineImageRows = db
     .prepare(
       `
-      SELECT id, image_url
+      SELECT id, image_url, thumbnail_url
       FROM timeline_images
       WHERE owner_id = ?
     `,
     )
-    .all(legacyUserId) as Array<{id: string; image_url: string}>;
+    .all(legacyUserId) as Array<{id: string; image_url: string; thumbnail_url: string}>;
 
   const updateTimelineImage = db.prepare('UPDATE timeline_images SET image_url = ? WHERE id = ?');
+  const updateTimelineThumbnail = db.prepare('UPDATE timeline_images SET thumbnail_url = ? WHERE id = ?');
   for (const row of timelineImageRows) {
     const parsed = parseLegacyUploadUrl(row.image_url, legacyUserId);
     if (!parsed) continue;
     if (!moveUploadIntoUserDir(legacyUserId, parsed.filename)) continue;
     updateTimelineImage.run(parsed.url, row.id);
+
+    const thumbnail = parseLegacyUploadUrl(row.thumbnail_url, legacyUserId);
+    if (!thumbnail) continue;
+    if (!moveUploadIntoUserDir(legacyUserId, thumbnail.filename)) continue;
+    updateTimelineThumbnail.run(thumbnail.url, row.id);
   }
 }
 
