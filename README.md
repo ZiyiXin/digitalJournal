@@ -20,20 +20,24 @@ npm install
 
 ### 2) 环境变量
 
-复制 `.env.example` 到 `.env.local`（或直接在系统环境里设置）:
+本地开发请复制 `.env.example` 到 `.env`（或直接在系统环境里设置）：
 
 ```bash
 PORT=3001
 HOST=127.0.0.1
-NODE_ENV=production
 DATA_DIR=./data
 LEGACY_OWNER_EMAIL=legacy@digital-journal.local
 LEGACY_OWNER_PASSWORD=ChangeMeNow123!
 LEGACY_OWNER_NICKNAME=Legacy Owner
 STORAGE_CAPACITY_GB=20
 ORPHAN_UPLOAD_TTL_HOURS=24
-# 后台管理面板仅允许 legacy@digital-journal.local 访问
 ```
+
+说明：
+
+- 本地开发时不要设置 `NODE_ENV=production`，否则登录 Cookie 会启用 `secure`，HTTP 本地环境下无法正常登录。
+- 生产环境再设置 `NODE_ENV=production`。
+- 后台管理面板默认只允许 `LEGACY_OWNER_EMAIL` 对应账号访问。
 
 ### 3) 启动开发环境
 
@@ -67,9 +71,17 @@ npm run lint         # TypeScript 类型检查
 以上目录已加入 `.gitignore`。
 也可以通过 `DATA_DIR` 环境变量改到共享目录，例如 `/srv/digital-journal/shared/data`。
 
+首次启动说明：
+
+- 仓库不包含任何真实业务数据。
+- 服务首次启动时会自动创建空的数据库和上传目录。
+- 不会自动创建演示空间或默认用户。
+- 只有检测到旧版本历史数据且缺少 `owner_id` 时，才会触发 legacy 数据回填。
+
 ## 迭代文档
 
 - 阶段 1（账号 + 数据隔离）改造清单：`docs/stage1-account-isolation-checklist.md`
+- 海外服务器部署手册：`docs/overseas-server-deployment-guide.md`
 
 ## 当前 API（核心）
 
@@ -111,6 +123,20 @@ npm run lint         # TypeScript 类型检查
 npm install
 npm run build
 NODE_ENV=production npm run start
+```
+
+生产环境建议使用 `.env` 文件，例如：
+
+```bash
+PORT=3001
+HOST=127.0.0.1
+NODE_ENV=production
+DATA_DIR=/srv/digital-journal/shared/data
+LEGACY_OWNER_EMAIL=legacy@digital-journal.local
+LEGACY_OWNER_PASSWORD=请改成强密码
+LEGACY_OWNER_NICKNAME=Legacy Owner
+STORAGE_CAPACITY_GB=20
+ORPHAN_UPLOAD_TTL_HOURS=24
 ```
 
 样板配置：
