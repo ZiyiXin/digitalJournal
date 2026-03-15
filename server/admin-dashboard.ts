@@ -107,6 +107,32 @@ export class QuotaExceededError extends Error {
 }
 
 const DEFAULT_STORAGE_CAPACITY_GB = 20;
+const USAGE_SNAPSHOT_TTL_MS = 1500;
+
+type StorageScanSnapshot = {
+  photoFileCount: number;
+  usedBytes: number;
+  fileKeys: Set<string>;
+  byUser: Map<string, UserStorageScan>;
+};
+
+type UploadReferenceSnapshot = {
+  referencedFileKeys: Set<string>;
+  referencedByUser: Map<string, number>;
+};
+
+type UsageSnapshot = {
+  storageScan: StorageScanSnapshot;
+  references: UploadReferenceSnapshot;
+  spaceCountByUser: Map<string, number>;
+  expiresAt: number;
+};
+
+let cachedUsageSnapshot: UsageSnapshot | null = null;
+
+export function invalidateUsageSnapshotCache(): void {
+  cachedUsageSnapshot = null;
+}
 
 function normalizeQuotaSettings(spaceLimit: number, storageLimitBytes: number): UserQuotaSettings {
   return {
@@ -121,12 +147,7 @@ function getStorageCapacityBytes(): number {
   return Math.round(storageGb * 1024 * 1024 * 1024);
 }
 
-function scanUploadDirectory(): {
-  photoFileCount: number;
-  usedBytes: number;
-  fileKeys: Set<string>;
-  byUser: Map<string, UserStorageScan>;
-} {
+function scanUploadDirectory(): StorageScanSnapshot {
   const fileKeys = new Set<string>();
   const byUser = new Map<string, UserStorageScan>();
   let photoFileCount = 0;
@@ -184,10 +205,7 @@ function scanUploadDirectory(): {
   };
 }
 
-function listUploadReferences(): {
-  referencedFileKeys: Set<string>;
-  referencedByUser: Map<string, number>;
-} {
+function listUploadReferences(): UploadReferenceSnapshot {
   const rows = db
     .prepare(
       `
@@ -239,6 +257,31 @@ function listSpaceCountByUser(): Map<string, number> {
   return new Map(rows.map((row) => [row.owner_id, row.count]));
 }
 
+function collectUsageSnapshot(): Omit<UsageSnapshot, 'expiresAt'> {
+  const now = Date.now();
+  if (cachedUsageSnapshot && cachedUsageSnapshot.expiresAt > now) {
+    return {
+      storageScan: cachedUsageSnapshot.storageScan,
+      references: cachedUsageSnapshot.references,
+      spaceCountByUser: cachedUsageSnapshot.spaceCountByUser,
+    };
+  }
+
+  const snapshot: UsageSnapshot = {
+    storageScan: scanUploadDirectory(),
+    references: listUploadReferences(),
+    spaceCountByUser: listSpaceCountByUser(),
+    expiresAt: now + USAGE_SNAPSHOT_TTL_MS,
+  };
+  cachedUsageSnapshot = snapshot;
+
+  return {
+    storageScan: snapshot.storageScan,
+    references: snapshot.references,
+    spaceCountByUser: snapshot.spaceCountByUser,
+  };
+}
+
 function getUserQuotaSettings(userId: string): UserQuotaSettings | null {
   const row = db
     .prepare(
@@ -258,8 +301,8 @@ function getUserQuotaSettings(userId: string): UserQuotaSettings | null {
 function buildQuotaBreakdown(
   userId: string,
   quotaSettings: UserQuotaSettings,
-  storageScan: ReturnType<typeof scanUploadDirectory>,
-  references: ReturnType<typeof listUploadReferences>,
+  storageScan: StorageScanSnapshot,
+  references: UploadReferenceSnapshot,
   spaceCountByUser: Map<string, number>,
 ): AccountQuotaBreakdown {
   const spaceCount = spaceCountByUser.get(userId) ?? 0;
@@ -284,9 +327,7 @@ export function getAccountDashboardStats(userId: string): AccountDashboardStats 
   const quotaSettings = getUserQuotaSettings(userId);
   if (!quotaSettings) return null;
 
-  const storageScan = scanUploadDirectory();
-  const references = listUploadReferences();
-  const spaceCountByUser = listSpaceCountByUser();
+  const {storageScan, references, spaceCountByUser} = collectUsageSnapshot();
   const breakdown = buildQuotaBreakdown(userId, quotaSettings, storageScan, references, spaceCountByUser);
 
   return {
@@ -319,7 +360,7 @@ export function assertStorageQuotaAvailable(userId: string, additionalBytes = 0)
 
 export function assertGlobalStorageCapacityAvailable(additionalBytes = 0): void {
   const capacityBytes = getStorageCapacityBytes();
-  const storageScan = scanUploadDirectory();
+  const {storageScan} = collectUsageSnapshot();
   const projectedBytes = storageScan.usedBytes + Math.max(additionalBytes, 0);
 
   if (projectedBytes > capacityBytes) {
@@ -339,9 +380,7 @@ export function getAdminDashboardStats(): AdminDashboardStats {
     .all() as UserRow[];
 
   const capacityBytes = getStorageCapacityBytes();
-  const storageScan = scanUploadDirectory();
-  const references = listUploadReferences();
-  const spaceCountByUser = listSpaceCountByUser();
+  const {storageScan, references, spaceCountByUser} = collectUsageSnapshot();
 
   let referencedExistingPhotoCount = 0;
   for (const fileKey of references.referencedFileKeys) {

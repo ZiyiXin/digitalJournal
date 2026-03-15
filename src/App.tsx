@@ -17,7 +17,8 @@ import {
   ChevronLeft,
   ChevronUp,
   ArrowLeft,
-  Palette,
+  Eye,
+  EyeOff,
   Pencil,
   Trash2,
   Move,
@@ -48,6 +49,7 @@ import {
   updateSpaceMeta,
   uploadImage,
 } from './lib/api';
+import type {UploadProgress} from './lib/api';
 import type {
   AccountDashboardStats,
   AdminDashboardStats,
@@ -233,11 +235,15 @@ const useNotice = () => React.useContext(NoticeContext);
 const treeholeColors = ['bg-[#fff0f3]', 'bg-[#fdf4ff]', 'bg-[#f0fdf4]', 'bg-[#fffbeb]', 'bg-[#f0f9ff]'];
 const MAX_ENTRY_UPLOAD_IMAGES = 10;
 const MAX_IMAGES_PER_TIMELINE_OR_ALBUM = 30;
+const MAX_CONCURRENT_IMAGE_UPLOADS = 2;
 const DEFAULT_AVATAR_FOCUS: AvatarFocus = { x: 50, y: 50, scale: 1 };
 const AVATAR_SCALE_MIN = 1;
 const AVATAR_SCALE_MAX = 3;
 const TIMELINE_COVER_FALLBACK = 'https://images.unsplash.com/photo-1490750967868-88aa4486c946?auto=format&fit=crop&w=800&q=80';
 const INFO_CAPSULE_TYPES: InfoCapsuleType[] = ['date', 'zodiac', 'location', 'custom'];
+const ACTIVE_THEME_NAME: ThemeName = 'default';
+const THEME_STORAGE_KEY = 'journal-theme';
+const HIDDEN_THEME_STORAGE_KEY = 'journal-theme-hidden';
 const INFO_CAPSULE_TYPE_LABELS: Record<InfoCapsuleType, string> = {
   date: '日期',
   zodiac: '星座',
@@ -413,6 +419,71 @@ function getSpaceImagePreviewUrl(originalUrl?: string, thumbnailUrl?: string): s
   return thumbnailUrl || originalUrl || '';
 }
 
+async function uploadFilesWithConcurrency<T>(
+  files: readonly File[],
+  limit: number,
+  worker: (file: File, onProgress?: (progress: UploadProgress) => void) => Promise<T>,
+  onProgress?: (progress: BatchUploadProgress) => void,
+): Promise<T[]> {
+  if (files.length === 0) return [];
+
+  const results = new Array<T>(files.length);
+  const reportedLoadedBytes = new Array<number>(files.length).fill(0);
+  const totalBytes = files.reduce((sum, file) => sum + Math.max(file.size, 0), 0);
+  let nextIndex = 0;
+  let totalLoadedBytes = 0;
+  let completedFiles = 0;
+  const workerCount = Math.min(limit, files.length);
+
+  const emitProgress = () => {
+    if (!onProgress) return;
+    const percent = totalBytes > 0
+      ? Math.round((totalLoadedBytes / totalBytes) * 100)
+      : Math.round((completedFiles / files.length) * 100);
+
+    onProgress({
+      completedFiles,
+      totalFiles: files.length,
+      loadedBytes: totalLoadedBytes,
+      totalBytes,
+      percent: clampValue(percent, 0, 100),
+    });
+  };
+
+  const updateLoadedBytes = (index: number, nextLoadedBytes: number) => {
+    const fileSize = Math.max(files[index]?.size ?? 0, 0);
+    const safeLoadedBytes = fileSize > 0
+      ? clampValue(Math.round(nextLoadedBytes), 0, fileSize)
+      : Math.max(Math.round(nextLoadedBytes), 0);
+    totalLoadedBytes += safeLoadedBytes - reportedLoadedBytes[index]!;
+    reportedLoadedBytes[index] = safeLoadedBytes;
+    emitProgress();
+  };
+
+  emitProgress();
+
+  await Promise.all(
+    Array.from({length: workerCount}, async () => {
+      while (true) {
+        const currentIndex = nextIndex;
+        nextIndex += 1;
+
+        if (currentIndex >= files.length) return;
+
+        const file = files[currentIndex]!;
+        results[currentIndex] = await worker(file, (progress) => {
+          updateLoadedBytes(currentIndex, progress.loaded);
+        });
+        updateLoadedBytes(currentIndex, file.size);
+        completedFiles += 1;
+        emitProgress();
+      }
+    }),
+  );
+
+  return results;
+}
+
 // --- Safe Image Component ---
 function SafeImage({
   src,
@@ -526,10 +597,97 @@ type NoticeItem = {
   message: string;
 };
 
+type UploadImageHandler = (
+  file: File,
+  onProgress?: (progress: UploadProgress) => void,
+) => Promise<ImageUploadResult>;
+
+type BatchUploadProgress = {
+  completedFiles: number;
+  totalFiles: number;
+  loadedBytes: number;
+  totalBytes: number;
+  percent: number;
+};
+
+type PasswordFieldProps = React.InputHTMLAttributes<HTMLInputElement> & {
+  containerClassName?: string;
+  toggleClassName?: string;
+};
+
+const PasswordField = React.forwardRef<HTMLInputElement, PasswordFieldProps>(function PasswordField(
+  {
+    containerClassName = 'relative',
+    toggleClassName = 'text-stone-400 hover:text-stone-600',
+    className,
+    type: _type,
+    ...props
+  },
+  ref,
+) {
+  const [isVisible, setIsVisible] = useState(false);
+
+  return (
+    <div className={containerClassName}>
+      <input
+        {...props}
+        ref={ref}
+        type={isVisible ? 'text' : 'password'}
+        className={`${className ?? ''} pr-11`}
+      />
+      <button
+        type="button"
+        onClick={() => setIsVisible((prev) => !prev)}
+        aria-label={isVisible ? '点击隐藏密码' : '点击显示密码'}
+        title={isVisible ? '隐藏密码' : '显示密码'}
+        aria-pressed={isVisible}
+        className={`absolute inset-y-0 right-0 flex items-center justify-center px-3 transition-colors ${toggleClassName}`}
+      >
+        {isVisible ? <Eye size={18} /> : <EyeOff size={18} />}
+      </button>
+    </div>
+  );
+});
+PasswordField.displayName = 'PasswordField';
+
+function UploadProgressBar({
+  percent,
+  label,
+  detail,
+  className = '',
+  textClassName = '',
+  trackClassName = 'bg-black/10',
+  fillClassName = 'bg-pink-400',
+}: {
+  percent: number;
+  label: string;
+  detail?: string;
+  className?: string;
+  textClassName?: string;
+  trackClassName?: string;
+  fillClassName?: string;
+}) {
+  const safePercent = clampValue(Math.round(percent), 0, 100);
+
+  return (
+    <div className={className}>
+      <div className={`flex items-center justify-between gap-3 text-xs font-medium ${textClassName}`}>
+        <span>{label}</span>
+        <span>{safePercent}%</span>
+      </div>
+      <div className={`mt-2 h-2 w-full overflow-hidden rounded-full ${trackClassName}`}>
+        <div
+          className={`h-full rounded-full transition-[width] duration-200 ${fillClassName}`}
+          style={{width: `${safePercent}%`}}
+        />
+      </div>
+      {detail ? <p className={`mt-1 text-[11px] ${textClassName}`}>{detail}</p> : null}
+    </div>
+  );
+}
+
 type ActionMenuProps = {
   userLabel: string;
-  themeName: ThemeName;
-  setThemeName: (theme: ThemeName) => void;
   onOpenAccountPanel: () => void;
   canOpenAdminPanel: boolean;
   onOpenAdminPanel: () => void;
@@ -539,8 +697,6 @@ type ActionMenuProps = {
 
 function ActionMenu({
   userLabel,
-  themeName,
-  setThemeName,
   onOpenAccountPanel,
   canOpenAdminPanel,
   onOpenAdminPanel,
@@ -550,12 +706,10 @@ function ActionMenu({
   const theme = useTheme();
   const menuContainerRef = useRef<HTMLDivElement | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
-  const [isThemeMenuOpen, setIsThemeMenuOpen] = useState(false);
   const triggerButtonClass = `inline-flex items-center gap-2 rounded-full border ${theme.cardBorder} ${theme.cardBg} px-4 py-2 text-sm font-medium ${theme.textMain} shadow-sm backdrop-blur-md transition-colors hover:bg-black/5`;
   const actionButtonClass = `inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-1 text-[13px] font-medium ${theme.textMain} transition-colors hover:bg-black/5`;
   const iconButtonClass = `inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${theme.textMuted} transition-colors hover:bg-black/5`;
   const dividerClass = `h-3.5 w-px ${theme.cardBorder}`;
-  const themeOptionClass = `block w-full rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors hover:bg-black/5`;
 
   React.useEffect(() => {
     if (!isExpanded) return;
@@ -565,14 +719,12 @@ function ActionMenu({
       if (!target) return;
       if (!menuContainerRef.current?.contains(target)) {
         setIsExpanded(false);
-        setIsThemeMenuOpen(false);
       }
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setIsExpanded(false);
-        setIsThemeMenuOpen(false);
       }
     };
 
@@ -588,17 +740,6 @@ function ActionMenu({
 
   const collapseMenu = () => {
     setIsExpanded(false);
-    setIsThemeMenuOpen(false);
-  };
-
-  const expandMenu = () => {
-    setIsThemeMenuOpen(false);
-    setIsExpanded(true);
-  };
-
-  const handleThemeChange = (nextTheme: ThemeName) => {
-    setThemeName(nextTheme);
-    setIsThemeMenuOpen(false);
   };
 
   const handleOpenAdminPanel = () => {
@@ -631,7 +772,7 @@ function ActionMenu({
             animate={{opacity: 1, y: 0, scale: 1}}
             exit={{opacity: 0, y: -6, scale: 0.98}}
             transition={{duration: 0.16, ease: 'easeOut'}}
-            className={`flex max-w-[calc(100vw-1rem)] items-center gap-1 whitespace-nowrap rounded-full border px-2 py-1.5 shadow-sm ${theme.cardBg} ${theme.cardBorder} backdrop-blur-md ${isThemeMenuOpen ? 'overflow-visible' : 'overflow-x-auto hide-scrollbar'}`}
+            className={`flex max-w-[calc(100vw-1rem)] items-center gap-1 overflow-x-auto whitespace-nowrap rounded-full border px-2 py-1.5 shadow-sm hide-scrollbar ${theme.cardBg} ${theme.cardBorder} backdrop-blur-md`}
           >
             <div className={`inline-flex min-w-0 items-center gap-1.5 px-1 py-0.5 text-[13px] font-medium ${theme.textMain}`}>
               <Users size={14} className={theme.accent} />
@@ -639,38 +780,6 @@ function ActionMenu({
             </div>
 
             <span aria-hidden="true" className={dividerClass} />
-
-            <div className="relative shrink-0">
-              <button type="button" onClick={() => setIsThemeMenuOpen((prev) => !prev)} className={actionButtonClass}>
-                <Palette className={theme.accent} size={16} />
-                <span>主题</span>
-                <span className={`text-xs ${theme.textMuted}`}>{THEME_LABELS[themeName]}</span>
-                <ChevronDown size={14} className={`${theme.textMuted} transition-transform ${isThemeMenuOpen ? 'rotate-180' : ''}`} />
-              </button>
-
-              <AnimatePresence>
-                {isThemeMenuOpen ? (
-                  <motion.div
-                    initial={{opacity: 0, y: -4}}
-                    animate={{opacity: 1, y: 0}}
-                    exit={{opacity: 0, y: -4}}
-                    transition={{duration: 0.14, ease: 'easeOut'}}
-                    className={`absolute right-0 top-full z-20 mt-2 max-h-56 w-44 overflow-x-hidden overflow-y-auto whitespace-normal rounded-2xl border p-1 shadow-xl ${theme.cardBg} ${theme.cardBorder} backdrop-blur-xl`}
-                  >
-                    {THEME_OPTIONS.map((t) => (
-                      <button
-                        key={t}
-                        type="button"
-                        onClick={() => handleThemeChange(t)}
-                        className={`${themeOptionClass} ${themeName === t ? theme.accent : theme.textMuted}`}
-                      >
-                        {THEME_LABELS[t]}
-                      </button>
-                    ))}
-                  </motion.div>
-                ) : null}
-              </AnimatePresence>
-            </div>
 
             <button type="button" onClick={handleOpenAccountPanel} className={actionButtonClass}>
               <HardDrive className={theme.accent} size={16} />
@@ -702,7 +811,7 @@ function ActionMenu({
           <motion.button
             key="collapsed-menu"
             type="button"
-            onClick={expandMenu}
+            onClick={() => setIsExpanded(true)}
             aria-expanded={false}
             aria-label="展开菜单"
             initial={{opacity: 0, y: -6, scale: 0.98}}
@@ -725,10 +834,8 @@ type SpaceDetailProps = {
   space: Space;
   onBack: () => void;
   onUpdateSpace: (space: Space) => void;
-  themeName: ThemeName;
-  setThemeName: (theme: ThemeName) => void;
   viewerName: string;
-  onUploadImage: (file: File) => Promise<ImageUploadResult>;
+  onUploadImage: UploadImageHandler;
   onOpenAccountPanel: () => void;
   canOpenAdminPanel: boolean;
   onOpenAdminPanel: () => void;
@@ -741,8 +848,6 @@ function SpaceDetail({
   space,
   onBack,
   onUpdateSpace,
-  themeName,
-  setThemeName,
   viewerName,
   onUploadImage,
   onOpenAccountPanel,
@@ -759,6 +864,8 @@ function SpaceDetail({
   const [lightboxData, setLightboxData] = useState<{ url: string, text?: string } | null>(null);
   const [expandedAlbumId, setExpandedAlbumId] = useState<string | null>(null);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [imageUploadProgress, setImageUploadProgress] = useState<number | null>(null);
+  const [imageUploadTarget, setImageUploadTarget] = useState<'avatar' | 'hero' | null>(null);
   const hasMountedRef = useRef(false);
   const theme = useTheme();
 
@@ -843,6 +950,9 @@ function SpaceDetail({
     setAvatarFocusDraft(incomingAvatarFocus);
     setSpaceDescription(space.description);
     setInfoCapsules(ensureCoreInfoCapsules(normalizeInfoCapsules(space.infoCapsules)));
+    setIsUploadingImage(false);
+    setImageUploadProgress(null);
+    setImageUploadTarget(null);
   }, [space.id]);
 
   React.useEffect(() => {
@@ -886,18 +996,30 @@ function SpaceDetail({
   const handleImageUpload = async (
     e: React.ChangeEvent<HTMLInputElement>,
     setter: (upload: ImageUploadResult) => void,
+    target: 'avatar' | 'hero',
   ) => {
-    const file = e.target.files?.[0];
+    const input = e.target;
+    const file = input.files?.[0];
     if (file) {
       setIsUploadingImage(true);
+      setImageUploadTarget(target);
+      setImageUploadProgress(0);
       try {
-        const upload = await onUploadImage(file);
+        const upload = await onUploadImage(file, (progress) => {
+          setImageUploadProgress(progress.percent);
+        });
         setter(upload);
       } catch (error) {
+        if (isApiError(error) && error.status === 401) {
+          return;
+        }
         const message = error instanceof Error ? error.message : '图片上传失败';
         notify(message);
       } finally {
         setIsUploadingImage(false);
+        setImageUploadProgress(null);
+        setImageUploadTarget(null);
+        input.value = '';
       }
     }
   };
@@ -998,7 +1120,7 @@ function SpaceDetail({
     setAvatarFocusDraft((prev) => ({ ...prev, scale: nextScale }));
   };
 
-  const handleUploadImage = async (file: File): Promise<ImageUploadResult> => onUploadImage(file);
+  const handleUploadImage: UploadImageHandler = (file, onProgress) => onUploadImage(file, onProgress);
 
   const sortByDateDesc = <T extends {date: string}>(items: T[]): T[] =>
     [...items].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -1403,8 +1525,6 @@ function SpaceDetail({
 
       <ActionMenu
         userLabel={viewerName}
-        themeName={themeName}
-        setThemeName={setThemeName}
         onOpenAccountPanel={onOpenAccountPanel}
         canOpenAdminPanel={canOpenAdminPanel}
         onOpenAdminPanel={onOpenAdminPanel}
@@ -1441,9 +1561,24 @@ function SpaceDetail({
                   transform: `scale(${avatarFocus.scale})`,
                 }}
               />
-              <label className="absolute inset-0 bg-black/45 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity duration-300">
-                <Camera className="text-white mb-1" size={20} />
-                <span className="text-white text-xs font-medium">更换头像</span>
+              <label className={`absolute inset-0 bg-black/45 flex flex-col items-center justify-center transition-opacity duration-300 ${
+                isUploadingImage && imageUploadTarget === 'avatar' ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 cursor-pointer'
+              }`}>
+                {isUploadingImage && imageUploadTarget === 'avatar' ? (
+                  <UploadProgressBar
+                    percent={imageUploadProgress ?? 0}
+                    label="头像上传中"
+                    textClassName="text-white"
+                    trackClassName="bg-white/25"
+                    fillClassName="bg-white"
+                    className="w-16"
+                  />
+                ) : (
+                  <>
+                    <Camera className="text-white mb-1" size={20} />
+                    <span className="text-white text-xs font-medium">更换头像</span>
+                  </>
+                )}
                 <input
                   type="file"
                   className="hidden"
@@ -1455,7 +1590,7 @@ function SpaceDetail({
                       setAvatarThumbnailImage(thumbnailUrl);
                       setAvatarFocus(DEFAULT_AVATAR_FOCUS);
                       setAvatarFocusDraft(DEFAULT_AVATAR_FOCUS);
-                    })
+                    }, 'avatar')
                   }
                 />
               </label>
@@ -1544,11 +1679,14 @@ function SpaceDetail({
         </div>
         <label
           title="上传头图"
-          className={`absolute right-4 bottom-3 z-20 inline-flex h-9 w-9 items-center justify-center rounded-full border ${theme.cardBorder} ${theme.cardBg} shadow-sm backdrop-blur-md transition-all duration-200 ${
+          className={`absolute right-4 bottom-3 z-20 inline-flex items-center justify-center rounded-full border ${theme.cardBorder} ${theme.cardBg} shadow-sm backdrop-blur-md transition-all duration-200 ${
             isUploadingImage ? 'cursor-not-allowed opacity-55' : 'cursor-pointer'
-          } opacity-100 md:opacity-0 md:group-hover/hero:opacity-100 md:group-focus-within/hero:opacity-100`}
+          } ${isUploadingImage && imageUploadTarget === 'hero' ? 'h-9 min-w-[5.5rem] gap-2 px-3 opacity-100' : 'h-9 w-9 opacity-100 md:opacity-0 md:group-hover/hero:opacity-100 md:group-focus-within/hero:opacity-100'}`}
         >
           <ImagePlus className={theme.accent} size={17} />
+          {isUploadingImage && imageUploadTarget === 'hero' ? (
+            <span className={`text-[11px] font-semibold ${theme.textMain}`}>{clampValue(imageUploadProgress ?? 0, 0, 100)}%</span>
+          ) : null}
           <input
             type="file"
             className="hidden"
@@ -1558,7 +1696,7 @@ function SpaceDetail({
               void handleImageUpload(e, ({url, thumbnailUrl}) => {
                 setHeroImage(url);
                 setHeroThumbnailImage(thumbnailUrl);
-              })
+              }, 'hero')
             }
           />
         </label>
@@ -3008,7 +3146,7 @@ function AddEntryModal({
   onClose: () => void;
   onAdd: (type: 'timeline' | 'album' | 'treehole', data: any) => void;
   existingEvents: TimelineEntry[];
-  onUploadImage: (file: File) => Promise<ImageUploadResult>;
+  onUploadImage: UploadImageHandler;
 }) {
   const theme = useTheme();
   const lightconeMode = isLightconeTheme(theme);
@@ -3021,6 +3159,7 @@ function AddEntryModal({
   const [uploadedImages, setUploadedImages] = useState<ImageUploadResult[]>([]);
   const [text, setText] = useState('');
   const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [batchUploadProgress, setBatchUploadProgress] = useState<BatchUploadProgress | null>(null);
 
   const handleImageInput = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles: File[] = Array.from(e.target.files ?? []);
@@ -3028,21 +3167,35 @@ function AddEntryModal({
     const filesToUpload = selectedFiles.slice(0, MAX_ENTRY_UPLOAD_IMAGES);
 
     setIsUploadingImage(true);
+    setBatchUploadProgress({
+      completedFiles: 0,
+      totalFiles: filesToUpload.length,
+      loadedBytes: 0,
+      totalBytes: filesToUpload.reduce((sum, file) => sum + Math.max(file.size, 0), 0),
+      percent: 0,
+    });
     try {
-      const nextUploads: ImageUploadResult[] = [];
-      for (const file of filesToUpload) {
-        const upload = await onUploadImage(file);
-        nextUploads.push(upload);
-      }
+      const nextUploads = await uploadFilesWithConcurrency(
+        filesToUpload,
+        MAX_CONCURRENT_IMAGE_UPLOADS,
+        onUploadImage,
+        (progress) => {
+          setBatchUploadProgress(progress);
+        },
+      );
       setUploadedImages(nextUploads);
       if (selectedFiles.length > MAX_ENTRY_UPLOAD_IMAGES) {
         notify(`一次最多上传 ${MAX_ENTRY_UPLOAD_IMAGES} 张，已保留前 ${MAX_ENTRY_UPLOAD_IMAGES} 张。`);
       }
     } catch (error) {
+      if (isApiError(error) && error.status === 401) {
+        return;
+      }
       const message = error instanceof Error ? error.message : '图片上传失败';
       notify(message);
     } finally {
       setIsUploadingImage(false);
+      setBatchUploadProgress(null);
       e.target.value = '';
     }
   };
@@ -3250,8 +3403,32 @@ function AddEntryModal({
                       <span className="text-sm font-bold">点击选择本地图片（可多选）</span>
                     </div>
                   )}
+                  {isUploadingImage && batchUploadProgress ? (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/50 px-5">
+                      <UploadProgressBar
+                        percent={batchUploadProgress.percent}
+                        label="照片上传中"
+                        detail={`已完成 ${batchUploadProgress.completedFiles} / ${batchUploadProgress.totalFiles} 张`}
+                        textClassName="text-white"
+                        trackClassName="bg-white/20"
+                        fillClassName="bg-white"
+                        className="w-full max-w-xs"
+                      />
+                    </div>
+                  ) : null}
                   <input type="file" className="hidden" accept="image/*" multiple disabled={isUploadingImage} onChange={(e) => void handleImageInput(e)} />
                 </label>
+                {isUploadingImage && batchUploadProgress ? (
+                  <UploadProgressBar
+                    percent={batchUploadProgress.percent}
+                    label="当前总进度"
+                    detail={`已上传 ${formatBytes(batchUploadProgress.loadedBytes)} / ${formatBytes(batchUploadProgress.totalBytes)}`}
+                    textClassName={lightconeMode ? 'text-[#9CB4CD]' : 'text-stone-500'}
+                    trackClassName={lightconeMode ? 'bg-[#173149]' : 'bg-stone-200'}
+                    fillClassName={lightconeMode ? 'bg-[#8AE7FF]' : 'bg-pink-400'}
+                    className="mt-3"
+                  />
+                ) : null}
               </motion.div>
 
               {/* Image Text/Remark Field */}
@@ -3530,6 +3707,7 @@ function ChangePasswordModal({
 }) {
   const theme = useTheme();
   const currentInputRef = useRef<HTMLInputElement | null>(null);
+  const passwordToggleClassName = `${theme.textMuted} hover:opacity-80`;
 
   React.useEffect(() => {
     if (!isOpen) return;
@@ -3581,24 +3759,24 @@ function ChangePasswordModal({
             <div className="space-y-4">
               <div>
                 <label className={`block text-sm font-semibold mb-2 ${theme.textMuted}`}>当前密码</label>
-                <input
+                <PasswordField
                   ref={currentInputRef}
-                  type="password"
                   autoComplete="current-password"
                   value={currentPassword}
                   onChange={(e) => onCurrentPasswordChange(e.target.value)}
                   className={`w-full rounded-2xl border ${theme.cardBorder} bg-transparent px-4 py-3 ${theme.textMain} focus:outline-none focus:ring-2 focus:ring-black/10`}
+                  toggleClassName={passwordToggleClassName}
                 />
               </div>
 
               <div>
                 <label className={`block text-sm font-semibold mb-2 ${theme.textMuted}`}>新密码</label>
-                <input
-                  type="password"
+                <PasswordField
                   autoComplete="new-password"
                   value={newPassword}
                   onChange={(e) => onNewPasswordChange(e.target.value)}
                   className={`w-full rounded-2xl border ${theme.cardBorder} bg-transparent px-4 py-3 ${theme.textMain} focus:outline-none focus:ring-2 focus:ring-black/10`}
+                  toggleClassName={passwordToggleClassName}
                 />
                 <div className="mt-2 flex items-center gap-2">
                   <div className="flex w-24 gap-1">
@@ -3612,8 +3790,7 @@ function ChangePasswordModal({
 
               <div>
                 <label className={`block text-sm font-semibold mb-2 ${theme.textMuted}`}>确认新密码</label>
-                <input
-                  type="password"
+                <PasswordField
                   autoComplete="new-password"
                   value={confirmPassword}
                   onChange={(e) => onConfirmPasswordChange(e.target.value)}
@@ -3628,6 +3805,7 @@ function ChangePasswordModal({
                     }
                   }}
                   className={`w-full rounded-2xl border ${theme.cardBorder} bg-transparent px-4 py-3 ${theme.textMain} focus:outline-none focus:ring-2 focus:ring-black/10`}
+                  toggleClassName={passwordToggleClassName}
                 />
               </div>
 
@@ -4133,7 +4311,7 @@ function Portal({
   onCreateSpace: (name: string, avatar: ImageUploadResult) => Promise<void>;
   onRenameSpace: (id: string, name: string) => Promise<void>;
   onDeleteSpace: (id: string) => Promise<void>;
-  onUploadImage: (file: File) => Promise<ImageUploadResult>;
+  onUploadImage: UploadImageHandler;
 }) {
   const theme = useTheme();
   const lightconeMode = isLightconeTheme(theme);
@@ -4143,6 +4321,7 @@ function Portal({
   const [newAvatar, setNewAvatar] = useState<ImageUploadResult | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [avatarUploadProgress, setAvatarUploadProgress] = useState<number | null>(null);
   const [renameTarget, setRenameTarget] = useState<Space | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<Space | null>(null);
@@ -4173,7 +4352,11 @@ function Portal({
         setIsCreating(false);
         setNewName('');
         setNewAvatar(null);
+        setAvatarUploadProgress(null);
       } catch (error) {
+        if (isApiError(error) && error.status === 401) {
+          return;
+        }
         const message = error instanceof Error ? error.message : '创建空间失败';
         notify(message);
       } finally {
@@ -4183,17 +4366,26 @@ function Portal({
   };
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    const input = e.target;
+    const file = input.files?.[0];
     if (file) {
       setIsUploadingAvatar(true);
+      setAvatarUploadProgress(0);
       try {
-        const upload = await onUploadImage(file);
+        const upload = await onUploadImage(file, (progress) => {
+          setAvatarUploadProgress(progress.percent);
+        });
         setNewAvatar(upload);
       } catch (error) {
+        if (isApiError(error) && error.status === 401) {
+          return;
+        }
         const message = error instanceof Error ? error.message : '头像上传失败';
         notify(message);
       } finally {
         setIsUploadingAvatar(false);
+        setAvatarUploadProgress(null);
+        input.value = '';
       }
     }
   };
@@ -4464,9 +4656,31 @@ function Portal({
                           <p className={`text-xs tracking-widest ${lightconeMode ? 'font-lightcone-title text-[#BFD0E3]' : 'font-serif text-stone-400'}`}>UPLOAD PHOTO</p>
                         </div>
                       )}
+                      {isUploadingAvatar && avatarUploadProgress !== null ? (
+                        <div className="absolute inset-0 flex items-end bg-black/35 p-4">
+                          <UploadProgressBar
+                            percent={avatarUploadProgress}
+                            label="头像上传中"
+                            textClassName="text-white"
+                            trackClassName="bg-white/20"
+                            fillClassName="bg-white"
+                            className="w-full"
+                          />
+                        </div>
+                      ) : null}
                       <input type="file" className="hidden" accept="image/*" disabled={isUploadingAvatar} onChange={(e) => void handleImageUpload(e)} required={!newAvatar} />
                     </label>
                   </div>
+                  {isUploadingAvatar && avatarUploadProgress !== null ? (
+                    <UploadProgressBar
+                      percent={avatarUploadProgress}
+                      label="当前进度"
+                      textClassName={lightconeMode ? 'text-[#9CB4CD]' : 'text-stone-500'}
+                      trackClassName={lightconeMode ? 'bg-[#173149]' : 'bg-stone-200'}
+                      fillClassName={lightconeMode ? 'bg-[#8AE7FF]' : 'bg-stone-800'}
+                      className="mt-3"
+                    />
+                  ) : null}
                 </div>
 
                 <button 
@@ -4529,6 +4743,7 @@ function AuthPanel({
   theme: (typeof THEMES)[ThemeName];
 }) {
   const lightconeMode = isLightconeTheme(theme);
+  const passwordToggleClassName = lightconeMode ? 'text-[#90A5C0] hover:text-[#EDF4FF]' : 'text-stone-400 hover:text-stone-600';
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -4612,14 +4827,14 @@ function AuthPanel({
 
           <div>
             <label className={`block text-xs mb-1 tracking-wider uppercase ${theme.textMuted}`}>密码</label>
-            <input
-              type="password"
+            <PasswordField
               autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
               required
               minLength={8}
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               className={`w-full px-3 py-2 focus:outline-none ${lightconeMode ? 'rounded-2xl border border-[#35516C]/72 bg-[#102033]/72 text-[#EDF4FF] placeholder:text-[#6C86A0] focus:border-[#8AE7FF]' : 'border border-stone-300 bg-white text-stone-900 focus:border-stone-700'}`}
+              toggleClassName={passwordToggleClassName}
               placeholder="至少 8 位"
             />
           </div>
@@ -4655,10 +4870,6 @@ function AuthPanel({
 
 // --- Main App Entry ---
 export default function App() {
-  const [themeName, setThemeName] = useState<ThemeName>(() => {
-    const stored = localStorage.getItem('journal-theme') as ThemeName | null;
-    return stored && stored in THEMES ? stored : 'default';
-  });
   const [portalTitle, setPortalTitle] = useState(() => localStorage.getItem('journal-portal-title') || '记忆空间');
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [spaces, setSpaces] = useState<Space[]>([]);
@@ -4708,8 +4919,13 @@ export default function App() {
   }, []);
 
   React.useEffect(() => {
-    localStorage.setItem('journal-theme', themeName);
-  }, [themeName]);
+    const storedTheme = localStorage.getItem(THEME_STORAGE_KEY) as ThemeName | null;
+    if (storedTheme && storedTheme in THEMES && storedTheme !== ACTIVE_THEME_NAME) {
+      // Keep the last user choice around while the public theme switcher is disabled.
+      localStorage.setItem(HIDDEN_THEME_STORAGE_KEY, storedTheme);
+    }
+    localStorage.setItem(THEME_STORAGE_KEY, ACTIVE_THEME_NAME);
+  }, []);
 
   React.useEffect(() => {
     localStorage.setItem('journal-portal-title', portalTitle);
@@ -5056,10 +5272,15 @@ export default function App() {
     }
   }, [loadAccountStats, moveToSignedOutState, notify]);
 
-  const handleUploadImage = useCallback(async (file: File) => {
+  const handleUploadImage = useCallback<UploadImageHandler>(async (file, onProgress) => {
     try {
-      const upload = await uploadImage(file);
-      void loadAccountStats();
+      const upload = await uploadImage(file, onProgress);
+      if (isAccountPanelOpen) {
+        void loadAccountStats();
+      }
+      if (isAdminPanelOpen) {
+        void loadAdminStats();
+      }
       return upload;
     } catch (error) {
       if (isApiError(error) && error.status === 401) {
@@ -5068,9 +5289,9 @@ export default function App() {
       }
       throw error;
     }
-  }, [loadAccountStats, moveToSignedOutState, notify]);
+  }, [isAccountPanelOpen, isAdminPanelOpen, loadAccountStats, loadAdminStats, moveToSignedOutState, notify]);
 
-  const currentTheme = THEMES[themeName];
+  const currentTheme = THEMES[ACTIVE_THEME_NAME];
   const currentSpace = currentSpaceId ? spaces.find((space) => space.id === currentSpaceId) ?? null : null;
   const canOpenAdminPanel = Boolean(currentUser?.canAccessAdminDashboard);
   const isPortalView = currentSpaceId === null || !currentSpace;
@@ -5109,8 +5330,6 @@ export default function App() {
           {isPortalView ? (
             <ActionMenu
               userLabel={currentUser.nickname}
-              themeName={themeName}
-              setThemeName={setThemeName}
               onOpenAccountPanel={openAccountPanel}
               canOpenAdminPanel={canOpenAdminPanel}
               onOpenAdminPanel={openAdminPanel}
@@ -5139,8 +5358,6 @@ export default function App() {
                   space={currentSpace!} 
                   onBack={() => setCurrentSpaceId(null)} 
                   onUpdateSpace={handleUpdateSpace}
-                  themeName={themeName}
-                  setThemeName={setThemeName}
                   viewerName={currentUser.nickname}
                   onUploadImage={handleUploadImage}
                   onOpenAccountPanel={openAccountPanel}

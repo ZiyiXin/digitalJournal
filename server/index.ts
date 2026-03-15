@@ -13,6 +13,7 @@ import {
   assertStorageQuotaAvailable,
   getAccountDashboardStats,
   getAdminDashboardStats,
+  invalidateUsageSnapshotCache,
   QuotaExceededError,
 } from './admin-dashboard';
 import {UPLOADS_DIR, getUserUploadsDir} from './db';
@@ -385,6 +386,7 @@ app.get('/uploads/:userId/:filename', requireAuth, (req, res) => {
     return;
   }
 
+  res.set('Cache-Control', 'private, max-age=31536000, immutable');
   res.sendFile(filePath);
 });
 
@@ -399,12 +401,14 @@ app.post('/api/uploads', uploadRateLimiter, requireAuth, upload.single('file'), 
   const thumbnailFilename = getThumbnailFilename(req.file.filename);
   const thumbnailPath = path.join(path.dirname(originalPath), thumbnailFilename);
 
+  invalidateUsageSnapshotCache();
   try {
     await createThumbnail(originalPath, thumbnailPath);
     assertStorageQuotaAvailable(userId);
     assertGlobalStorageCapacityAvailable();
   } catch (error) {
     cleanupFiles([originalPath, thumbnailPath]);
+    invalidateUsageSnapshotCache();
     next(error);
     return;
   }
@@ -567,6 +571,9 @@ if (!fs.existsSync(UPLOADS_DIR)) {
 
 revokeExpiredSessions();
 const removedOrphanUploads = pruneStaleOrphanedUploads();
+if (removedOrphanUploads > 0) {
+  invalidateUsageSnapshotCache();
+}
 
 app.listen(port, host, () => {
   // eslint-disable-next-line no-console

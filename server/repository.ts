@@ -1,4 +1,5 @@
 import {randomUUID} from 'node:crypto';
+import {invalidateUsageSnapshotCache} from './admin-dashboard';
 import {db} from './db';
 import {canEditSpace, canViewSpace} from './authz';
 import {collectUploadUrlsFromSpace, deleteUnreferencedUploadUrls} from './upload-storage';
@@ -325,6 +326,7 @@ export function createSpace(ownerId: string, input: CreateSpaceInput): Space {
     serializeInfoCapsules(input.infoCapsules),
   );
 
+  invalidateUsageSnapshotCache();
   return getSpaceById(id, ownerId)!;
 }
 
@@ -378,6 +380,7 @@ export function updateSpaceMeta(
 
   const updated = getSpaceById(spaceId, ownerId);
   deleteUnreferencedUploadUrls(previousUploadUrls);
+  invalidateUsageSnapshotCache();
   return updated;
 }
 
@@ -519,6 +522,7 @@ export function saveSpaceSnapshot(space: Space, ownerId: string): Space {
     throw new Error('Space not found');
   }
   deleteUnreferencedUploadUrls(previousUploadUrls);
+  invalidateUsageSnapshotCache();
   return saved;
 }
 
@@ -530,6 +534,7 @@ export function deleteSpace(spaceId: string, ownerId: string): boolean {
   const result = db.prepare('DELETE FROM spaces WHERE id = ? AND owner_id = ?').run(spaceId, ownerId);
   if (result.changes > 0) {
     deleteUnreferencedUploadUrls(previousUploadUrls);
+    invalidateUsageSnapshotCache();
   }
   return result.changes > 0;
 }
