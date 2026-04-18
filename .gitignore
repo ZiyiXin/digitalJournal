@@ -1,6 +1,7 @@
 node_modules/
 build/
 dist/
+dist-gh-pages/
 dist-server/
 coverage/
 .DS_Store

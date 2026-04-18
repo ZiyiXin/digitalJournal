@@ -9,6 +9,7 @@
     "dev:server": "node --import tsx server/index.ts",
     "build": "npm run build:client",
     "build:client": "vite build",
+    "build:github-pages": "vite build --config vite.github-pages.config.ts",
     "preview": "vite preview",
     "start": "node --import tsx server/index.ts",
     "start:server": "node --import tsx server/index.ts",
