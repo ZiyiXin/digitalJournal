@@ -407,16 +407,16 @@ function formatPercent(value: number): string {
 
 function getUploadPreviewUrl(upload?: ImageUploadResult | null): string {
   if (!upload) return '';
-  return upload.thumbnailUrl || upload.url;
+  return upload.url || upload.thumbnailUrl;
 }
 
 function getTimelineImagePreviewUrl(image?: Partial<TimelineImage> | null): string {
   if (!image) return TIMELINE_COVER_FALLBACK;
-  return image.thumbnailUrl || image.imageUrl || TIMELINE_COVER_FALLBACK;
+  return image.imageUrl || image.thumbnailUrl || TIMELINE_COVER_FALLBACK;
 }
 
 function getSpaceImagePreviewUrl(originalUrl?: string, thumbnailUrl?: string): string {
-  return thumbnailUrl || originalUrl || '';
+  return originalUrl || thumbnailUrl || '';
 }
 
 async function uploadFilesWithConcurrency<T>(
