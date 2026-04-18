@@ -30,11 +30,10 @@ const DEMO_PASSWORD = (import.meta.env.VITE_DEMO_PASSWORD ?? 'Demo123456!').trim
 const DEMO_NICKNAME = (import.meta.env.VITE_DEMO_NICKNAME ?? 'Demo User').trim() || 'Demo User';
 const DEMO_SPACE_LIMIT = 3;
 const DEMO_STORAGE_LIMIT_BYTES = 1024 * 1024 * 1024;
-const HERO_IMAGE = 'https://images.unsplash.com/photo-1518599904199-0ca897819ddb?auto=format&fit=crop&w=2000&q=80';
-const AVATAR_IMAGE = 'https://images.unsplash.com/photo-1545239351-1141bd82e8a6?auto=format&fit=crop&w=800&q=80';
-const ENTRY_IMAGE_1 = 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1200&q=80';
-const ENTRY_IMAGE_2 = 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=1200&q=80';
-const DB_KEY = 'digital-journal-gh-pages-db';
+const DEMO_ASSET_BASE = `${import.meta.env.BASE_URL}demo-assets/tianxiwei`;
+const HERO_IMAGE = `${DEMO_ASSET_BASE}/hero.jpg`;
+const AVATAR_IMAGE = `${DEMO_ASSET_BASE}/avatar.jpg`;
+const DB_KEY = 'digital-journal-gh-pages-db-v2';
 const SESSION_KEY = 'digital-journal-gh-pages-session';
 
 export class ApiError extends Error {
@@ -70,58 +69,131 @@ function cloneSpace<T>(value: T): T {
 function createDemoSpace(): Space {
   return {
     id: 'demo-space-1',
-    name: '星尘档案馆',
+    name: '田曦薇',
     avatarImage: AVATAR_IMAGE,
     avatarThumbnailImage: AVATAR_IMAGE,
     avatarFocus: {x: 50, y: 50, scale: 1},
     heroImage: HERO_IMAGE,
     heroThumbnailImage: HERO_IMAGE,
-    description: '一个适合展示角色设定、时间线和情绪碎片的数字手账 demo。',
+    description: '笑容明媚，眼若星辰。这里是属于她的元气角落，记录每一个闪光瞬间。',
     visibility: 'private',
     infoCapsules: [
-      {id: 'capsule-date', type: 'date', label: '日期', value: '2026-04-18'},
-      {id: 'capsule-location', type: 'location', label: '地点', value: '上海'},
-      {id: 'capsule-custom', type: 'custom', label: '关键词', value: 'AI Demo / 角色宇宙'},
+      {id: 'capsule-date', type: 'date', label: '日期', value: '2026-03-07'},
+      {id: 'capsule-location', type: 'location', label: '地点', value: '图库存档'},
+      {id: 'capsule-custom', type: 'custom', label: '关键词', value: '真实库内照片 / GitHub Pages Demo'},
     ],
     entries: [
       {
-        id: 'entry-1',
-        title: '初次苏醒',
-        date: '2026-04-01',
-        description: '在玻璃穹顶下第一次记录自己的设定、偏好和记忆碎片。',
+        id: 'entry-chunwan',
+        title: '春晚',
+        date: '2026-03-04',
+        description: '红裙和花朵的两张正式感照片，适合作为人物空间的第一页。',
         images: [
-          {id: 'entry-1-image-1', imageUrl: ENTRY_IMAGE_1, thumbnailUrl: ENTRY_IMAGE_1, text: '设定海报'},
-          {id: 'entry-1-image-2', imageUrl: ENTRY_IMAGE_2, thumbnailUrl: ENTRY_IMAGE_2, text: '场景参考'},
+          {
+            id: 'entry-chunwan-image-1',
+            imageUrl: `${DEMO_ASSET_BASE}/chunwan-1.jpg`,
+            thumbnailUrl: `${DEMO_ASSET_BASE}/chunwan-1.jpg`,
+            text: '春晚红裙',
+          },
+          {
+            id: 'entry-chunwan-image-2',
+            imageUrl: `${DEMO_ASSET_BASE}/chunwan-2.jpg`,
+            thumbnailUrl: `${DEMO_ASSET_BASE}/chunwan-2.jpg`,
+            text: '春晚小裙子',
+          },
         ],
         coverFocus: {x: 50, y: 42},
         rotation: -1.5,
         type: 'timeline',
       },
       {
-        id: 'entry-2',
-        title: '收集情绪样本',
-        date: '2026-04-10',
-        description: '把图片、文字和树洞整理成可浏览的个人记忆空间。',
+        id: 'entry-daily',
+        title: '田曦薇日常',
+        date: '2026-03-01',
+        description: '一张日常氛围照，用来承接头像和首页视觉。',
         images: [
-          {id: 'entry-2-image-1', imageUrl: ENTRY_IMAGE_2, thumbnailUrl: ENTRY_IMAGE_2, text: '夜色样本'},
+          {
+            id: 'entry-daily-image-1',
+            imageUrl: `${DEMO_ASSET_BASE}/daily-1.jpg`,
+            thumbnailUrl: `${DEMO_ASSET_BASE}/daily-1.jpg`,
+            text: '日常写真',
+          },
         ],
         coverFocus: {x: 50, y: 42},
         rotation: 1.2,
+        type: 'timeline',
+      },
+      {
+        id: 'entry-yellow',
+        title: '黄裙子',
+        date: '2026-03-01',
+        description: '同一组里挑了三张构图不同的黄裙照片，方便演示相册浏览。',
+        images: [
+          {
+            id: 'entry-yellow-image-1',
+            imageUrl: `${DEMO_ASSET_BASE}/yellow-1.jpg`,
+            thumbnailUrl: `${DEMO_ASSET_BASE}/yellow-1.jpg`,
+            text: '可爱的黄裙子',
+          },
+          {
+            id: 'entry-yellow-image-2',
+            imageUrl: `${DEMO_ASSET_BASE}/yellow-2.jpg`,
+            thumbnailUrl: `${DEMO_ASSET_BASE}/yellow-2.jpg`,
+            text: '黄裙子侧拍',
+          },
+          {
+            id: 'entry-yellow-image-3',
+            imageUrl: `${DEMO_ASSET_BASE}/yellow-3.jpg`,
+            thumbnailUrl: `${DEMO_ASSET_BASE}/yellow-3.jpg`,
+            text: '黄裙子近景',
+          },
+        ],
+        coverFocus: {x: 50, y: 42},
+        rotation: -1.1,
+        type: 'album',
+      },
+      {
+        id: 'entry-beauty',
+        title: '美女',
+        date: '2026-03-02',
+        description: '从原库里 30 张写真中挑了 3 张，保留这组的代表性风格。',
+        images: [
+          {
+            id: 'entry-beauty-image-1',
+            imageUrl: `${DEMO_ASSET_BASE}/beauty-1.jpg`,
+            thumbnailUrl: `${DEMO_ASSET_BASE}/beauty-1.jpg`,
+            text: '氛围感美女',
+          },
+          {
+            id: 'entry-beauty-image-2',
+            imageUrl: `${DEMO_ASSET_BASE}/beauty-2.jpg`,
+            thumbnailUrl: `${DEMO_ASSET_BASE}/beauty-2.jpg`,
+            text: '夜景写真',
+          },
+          {
+            id: 'entry-beauty-image-3',
+            imageUrl: `${DEMO_ASSET_BASE}/beauty-3.jpg`,
+            thumbnailUrl: `${DEMO_ASSET_BASE}/beauty-3.jpg`,
+            text: '海边氛围',
+          },
+        ],
+        coverFocus: {x: 50, y: 42},
+        rotation: 1.4,
         type: 'album',
       },
     ],
     treeholeEntries: [
       {
         id: 'treehole-1',
-        date: '2026-04-12',
-        text: '今天把 demo 改成了纯前端版，终于可以直接丢到 GitHub Pages。',
+        date: '2026-03-04',
+        text: '这版 GitHub Pages demo 直接用了本地数据库里的真实照片，不再是占位图。',
         color: 'bg-[#fff0f3]',
         rotation: -1.2,
       },
       {
         id: 'treehole-2',
-        date: '2026-04-15',
-        text: '登录页默认填好账号密码，评审打开链接后直接就能体验。',
+        date: '2026-03-07',
+        text: '评审打开链接后，能直接看到真实图库风格和完整相册浏览效果。',
         color: 'bg-[#f0f9ff]',
         rotation: 0.8,
       },
