@@ -4,6 +4,18 @@
 当前版本已支持前后端持久化：空间、时间线、相册和树洞数据会写入本地数据库，刷新不丢失。
 当前仓库已补齐 Linux 服务器可用的图片缩略图、上传回收、配额校验和生产构建入口，适合先以单机模式部署到腾讯云轻量应用服务器。
 
+## 在线演示
+
+- GitHub Pages Demo: [https://ziyixin.github.io/digitalJournal/](https://ziyixin.github.io/digitalJournal/)
+
+说明：
+
+- 当前线上 Demo 是为 GitHub Pages 单独构建的一份纯静态站点。
+- Demo 不连接真实后端，不依赖 Express、SQLite 或服务端上传目录。
+- Demo 使用仓库中的静态演示素材，并在浏览器 `localStorage` 中模拟登录态和数据读写。
+- 仓库中的完整版仍然是前后端分离架构：前端为 `React + Vite`，后端为 `Express`，数据持久化使用 `SQLite + data/uploads`。
+- GitHub Pages 版本只用于展示 UI 和交互流程，不等同于真实生产部署形态。
+
 ## 技术栈
 
 - 前端: React 19, TypeScript, Vite 6, Tailwind CSS 4, motion, lucide-react
@@ -57,6 +69,7 @@ npm run dev          # 并行启动前后端
 npm run dev:client   # 仅前端
 npm run dev:server   # 仅后端
 npm run build        # 构建前端生产产物
+npm run build:github-pages # 构建 GitHub Pages demo 产物
 npm run start        # 运行生产版后端
 npm run start:server # 运行生产版后端
 npm run verify:stage1 # 阶段1账号隔离验收
@@ -82,6 +95,27 @@ npm run lint         # TypeScript 类型检查
 
 - 阶段 1（账号 + 数据隔离）改造清单：`docs/stage1-account-isolation-checklist.md`
 - 海外服务器部署手册：`docs/overseas-server-deployment-guide.md`
+- 完整版 / GitHub Pages Demo 双版本结构说明：`docs/full-vs-demo-architecture.md`
+
+## Demo 与完整版的区别
+
+### GitHub Pages Demo
+
+- 访问地址：`https://ziyixin.github.io/digitalJournal/`
+- 构建命令：`npm run build:github-pages`
+- 构建产物：`dist-gh-pages/`
+- 运行形态：纯静态资源
+- 数据来源：演示静态素材 + 浏览器 `localStorage`
+- 用途：展示页面风格、内容结构和交互效果
+
+### 完整版
+
+- 本地开发：`npm run dev`
+- 正式构建：`npm run build`
+- 后端入口：`server/index.ts`
+- 运行形态：前后端分离，前端请求真实 `/api/*`
+- 数据来源：`SQLite` 数据库 + `data/uploads` 上传目录
+- 用途：真实账号、会话、空间数据和图片上传持久化
 
 ## 当前 API（核心）
 
